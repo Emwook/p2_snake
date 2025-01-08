@@ -1,0 +1,25 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build SDL2 Project",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-g",
+                "main.cpp",
+                "-o",
+                "main",
+                "-I/opt/homebrew/include/SDL2",  // Include SDL2 headers
+                "-L/opt/homebrew/lib",           // Link SDL2 libraries
+                "-lSDL2"                         // Link SDL2
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Build using g++"
+        }
+    ]
+}
