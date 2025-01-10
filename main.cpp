@@ -2,14 +2,46 @@
 #include<math.h>
 #include<stdio.h>
 #include<string.h>
+#include<iostream>
 
 extern "C" {
 #include"./SDL2-2.0.10/include/SDL.h"
 #include"./SDL2-2.0.10/include/SDL_main.h"
 }
 
-#define SCREEN_WIDTH	640
-#define SCREEN_HEIGHT	480
+#define SQUARE_SIZE 20
+#define SCREEN_WIDTH 31*SQUARE_SIZE
+#define SCREEN_HEIGHT 31*SQUARE_SIZE
+
+#define BOARD_MARGIN 4*SQUARE_SIZE
+#define BOARD_WIDTH (SCREEN_WIDTH - (2 * BOARD_MARGIN))
+#define BOARD_HEIGHT (SCREEN_HEIGHT - (2 * BOARD_MARGIN))
+
+#define STATS_HEIGHT 3*SQUARE_SIZE
+#define STATS_Y (SCREEN_HEIGHT - STATS_HEIGHT - 4)
+#define STATS_X 4
+#define STATS_WIDTH (SCREEN_WIDTH - 8)
+#define SPEED_FIX 100
+#define MAX_SNAKE_LENGTH 20
+
+typedef enum {
+    GAME_RUNNING,
+    GAME_OVER
+} GameState;
+
+
+typedef struct {
+    int x;
+    int y;
+} Position;
+
+typedef struct {
+    Position body[MAX_SNAKE_LENGTH];
+    int length;
+    int direction;
+    double speed;
+} Snake;
+
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text, SDL_Surface *charset) {
 	int px, py, c;
@@ -55,8 +87,7 @@ void DrawLine(SDL_Surface *screen, int x, int y, int l, int dx, int dy, Uint32 c
 		};
 	};
 
-void DrawRectangle(SDL_Surface *screen, int x, int y, int l, int k,
-                   Uint32 outlineColor, Uint32 fillColor) {
+void DrawRectangle(SDL_Surface *screen, int x, int y, int l, int k, Uint32 outlineColor, Uint32 fillColor) {
 	int i;
 	DrawLine(screen, x, y, k, 0, 1, outlineColor);
 	DrawLine(screen, x + l - 1, y, k, 0, 1, outlineColor);
@@ -66,17 +97,18 @@ void DrawRectangle(SDL_Surface *screen, int x, int y, int l, int k,
 		DrawLine(screen, x + 1, i, l - 2, 1, 0, fillColor);
 	};
 
-void ResetGame(double &posX, double &posY, double &worldTime, double &distance, double &etiSpeed, int &direction) {
-    posX = SCREEN_WIDTH / 2;
-    posY = SCREEN_HEIGHT / 2;
+void ResetGame(double &worldTime, Snake &snake) {
+	for(int i = 0; i<snake.length; i++){
+		snake.body[i].x = SCREEN_WIDTH / 2 - (i *SQUARE_SIZE);
+    	snake.body[i].y  = SCREEN_HEIGHT / 2;
+	}
+	snake.speed = 1;
+	snake.direction = 1;
     worldTime = 0;
-    distance = 0;
-    etiSpeed = 1;
-    direction = 1;
 }
 
-bool isValidMove(double nextX, double nextY, int BOARD_MARGIN, int BOARD_WIDTH, int BOARD_HEIGHT, int squareSize) {
-    double halfSquare = squareSize / 2;
+bool isValidMove(double nextX, double nextY) {
+    double halfSquare = SQUARE_SIZE / 2;
     
     return (nextX - halfSquare >= BOARD_MARGIN &&
             nextX + halfSquare <= BOARD_MARGIN + BOARD_WIDTH &&
@@ -84,216 +116,365 @@ bool isValidMove(double nextX, double nextY, int BOARD_MARGIN, int BOARD_WIDTH, 
             nextY + halfSquare <= BOARD_MARGIN + BOARD_HEIGHT);
 }
 
-int autoTurn(int currentDirection, double posX, double posY, int BOARD_MARGIN, int BOARD_WIDTH, int BOARD_HEIGHT, int squareSize) {
-    int newDirection;
-    double testX, testY;
-    double step = squareSize;
-
-    int rightTurn = (currentDirection + 1) % 4;
-    int leftTurn = (currentDirection + 3) % 4;
-
-    testX = posX + (rightTurn == 1 ? step : (rightTurn == 3 ? -step : 0));
-    testY = posY + (rightTurn == 0 ? -step : (rightTurn == 2 ? step : 0));
+void autoTurn(Snake &snake) {
+    double step = SQUARE_SIZE;
+	int rightTurn = (snake.direction + 1) % 4;
+    int leftTurn = (snake.direction + 3) % 4;
     
-    if (isValidMove(testX, testY, BOARD_MARGIN, BOARD_WIDTH, BOARD_HEIGHT, squareSize)) {
-        return rightTurn;
-    }
-
-    testX = posX + (leftTurn == 1 ? step : (leftTurn == 3 ? -step : 0));
-    testY = posY + (leftTurn == 0 ? -step : (leftTurn == 2 ? step : 0));
+    double rightX = snake.body[0].x;
+    double rightY = snake.body[0].y;
     
-    if (isValidMove(testX, testY, BOARD_MARGIN, BOARD_WIDTH, BOARD_HEIGHT, squareSize)) {
-        return leftTurn;
+    switch(rightTurn) {
+        case 0:
+            rightY -= step;
+            break;
+        case 1:
+            rightX += step;
+            break;
+        case 2:
+            rightY += step;
+            break;
+        case 3:
+            rightX -= step;
+            break;
     }
-	return currentDirection;
+    
+    double leftX = snake.body[0].x;
+    double leftY = snake.body[0].y;
+    
+    switch(leftTurn) {
+        case 0:
+            leftY -= step;
+            break;
+        case 1:
+            leftX += step;
+            break;
+        case 2:
+            leftY += step;
+            break;
+        case 3:
+            leftX -= step;
+            break;
+    }
+    
+    if (isValidMove(rightX, rightY)) {
+        snake.direction = rightTurn;
+        return;
+    }
+    
+    if (isValidMove(leftX, leftY)) {
+        snake.direction = leftTurn;
+        return;
+    }
 }
+
+void drawGrid(SDL_Surface *screen, Uint32 color) {
+    for (int x = BOARD_MARGIN; x < BOARD_MARGIN + BOARD_WIDTH; x += SQUARE_SIZE) {
+        DrawLine(screen, x, BOARD_MARGIN, BOARD_HEIGHT, 0, 1, color);
+    }
+    
+    for (int y = BOARD_MARGIN; y < BOARD_MARGIN + BOARD_HEIGHT; y += SQUARE_SIZE) {
+        DrawLine(screen, BOARD_MARGIN, y, BOARD_WIDTH, 1, 0, color);
+    }
+}
+
+// void snapToGrid(Snake &snake) {
+//     snake.body[0].x = (snake.body[0].x + SQUARE_SIZE / 2) / SQUARE_SIZE * SQUARE_SIZE;
+
+//     snake.body[0].y = (snake.body[0].y + SQUARE_SIZE / 2) / SQUARE_SIZE * SQUARE_SIZE;
+// }
+
+void UpdateSnake(Snake &snake) {
+    for (int i = snake.length - 1; i > 0; --i) {
+        snake.body[i] = snake.body[i - 1];
+    }
+
+    if (snake.direction == 0) {
+        snake.body[0].y -= SQUARE_SIZE;
+    } 
+    else if (snake.direction == 1) {
+        snake.body[0].x += SQUARE_SIZE;
+    } 
+    else if (snake.direction == 2) {
+        snake.body[0].y += SQUARE_SIZE;
+    } 
+    else if (snake.direction == 3) {
+        snake.body[0].x -= SQUARE_SIZE;
+    }
+}
+
+bool checkSnakeCollision(Snake* snake, int nextX, int nextY) {
+    for (int i = 1; i < snake->length - 1; i++) {
+        if (nextX == snake->body[i].x && nextY == snake->body[i].y) {
+				i, snake->body[i].x, snake->body[i].y;
+            return true;
+        }
+    }
+	return false;
+}
+
+
+void drawGameOver(SDL_Surface* screen, SDL_Surface* charset, int score, GameState* gameState) {
+    int windowWidth = SCREEN_WIDTH / 2;
+    int windowHeight = SCREEN_HEIGHT / 3;
+    int windowX = (SCREEN_WIDTH - windowWidth) / 2;
+    int windowY = (SCREEN_HEIGHT - windowHeight) / 2;
+    
+    Uint32 colorBlack = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
+    Uint32 colorRed = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
+    Uint32 colorWhite = SDL_MapRGB(screen->format, 0xFF, 0xFF, 0xFF);
+    
+    DrawRectangle(screen, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 
+                 SDL_MapRGB(screen->format, 0x00, 0x00, 0x00), 
+                 SDL_MapRGB(screen->format, 0x00, 0x00, 0x00));
+    
+    DrawRectangle(screen, windowX, windowY, windowWidth, windowHeight, 
+                 colorRed, colorBlack);
+    
+    char text[128];
+    sprintf(text, "GAME OVER!");
+    DrawString(screen, windowX + (windowWidth - strlen(text) * 8) / 2, 
+              windowY + 30, text, charset);
+    
+    sprintf(text, "Final Score: %d", score);
+    DrawString(screen, windowX + (windowWidth - strlen(text) * 8) / 2, 
+              windowY + 60, text, charset);
+    
+    sprintf(text, "Press N for New Game");
+    DrawString(screen, windowX + (windowWidth - strlen(text) * 8) / 2, 
+              windowY + 90, text, charset);
+    
+    sprintf(text, "Press ESC to Quit");
+    DrawString(screen, windowX + (windowWidth - strlen(text) * 8) / 2, 
+              windowY + 120, text, charset);
+}
+
+void handleGameOverInput(SDL_Event* event, int* quit, GameState* gameState, Snake* snake,  double* worldTime) {
+    while(SDL_PollEvent(event)) {
+        switch(event->type) {
+            case SDL_KEYDOWN:
+                if(event->key.keysym.sym == SDLK_ESCAPE) {
+                    *quit = 1;
+                }
+                else if(event->key.keysym.sym == SDLK_n) {
+                    ResetGame(*worldTime, *snake);
+                    *gameState = GAME_RUNNING;
+                }
+                break;
+            case SDL_QUIT:
+                *quit = 1;
+                break;
+        }
+    }
+}
+
 
 #ifdef __cplusplus
 extern "C"
 #endif
 int main(int argc, char **argv) {
-	int t1, t2, quit, frames, rc;
-	double delta, worldTime, fpsTimer, fps, distance, etiSpeed, posX, posY, stepX, stepY, speed_fix;
-	SDL_Event event;
-	SDL_Surface *screen, *charset;
-	SDL_Surface *eti;
-	SDL_Texture *scrtex;
-	SDL_Window *window;
-	SDL_Renderer *renderer;
+	GameState gameState = GAME_RUNNING;
+    int t1, t2, quit, frames, rc;
+    double delta, worldTime, fpsTimer, fps;
+    int stepX, stepY;
 
-	printf("wyjscie printfa trafia do tego okienka\n");
-	printf("printf output goes here\n");
+    Snake snake;
+    snake.direction = 1;
+    snake.length = 10;
+    snake.speed = 1;
+    ResetGame(worldTime, snake);
 
-	if(SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-		printf("SDL_Init error: %s\n", SDL_GetError());
-		return 1;
-		}
+    SDL_Event event;
+    SDL_Surface *screen, *charset;
+    SDL_Surface *eti;
+	SDL_Surface *ite;
+    SDL_Texture *scrtex;
+    SDL_Window *window;
+    SDL_Renderer *renderer;
 
-	rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0,
-	                                 &window, &renderer);
-	if(rc != 0) {
-		SDL_Quit();
-		printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
-		return 1;
-		};
-	
-	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-	SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    printf("wyjscie printfa trafia do tego okienka\n");
+    printf("printf output goes here\n");
 
-	SDL_SetWindowTitle(window, "Szablon do zdania drugiego 2017");
+    if(SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+        printf("SDL_Init error: %s\n", SDL_GetError());
+        return 1;
+    }
 
+    rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0,
+                                     &window, &renderer);
+    if(rc != 0) {
+        SDL_Quit();
+        printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
+        return 1;
+    }
 
-	screen = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
-	                              0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 
-	scrtex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-	                           SDL_TEXTUREACCESS_STREAMING,
-	                           SCREEN_WIDTH, SCREEN_HEIGHT);
+    SDL_SetWindowTitle(window, "snek");
 
+    screen = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
+                                  0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
 
-	SDL_ShowCursor(SDL_DISABLE);
+    scrtex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                               SDL_TEXTUREACCESS_STREAMING,
+                               SCREEN_WIDTH, SCREEN_HEIGHT);
 
-	charset = SDL_LoadBMP("./cs8x8.bmp");
-	if(charset == NULL) {
-		printf("SDL_LoadBMP(cs8x8.bmp) error: %s\n", SDL_GetError());
-		SDL_FreeSurface(screen);
-		SDL_DestroyTexture(scrtex);
-		SDL_DestroyWindow(window);
-		SDL_DestroyRenderer(renderer);
-		SDL_Quit();
-		return 1;
-		};
-	SDL_SetColorKey(charset, true, 0x000000);
+    SDL_ShowCursor(SDL_DISABLE);
 
-	int squareSize = 20;
+    charset = SDL_LoadBMP("./cs8x8.bmp");
+    if(charset == NULL) {
+        printf("SDL_LoadBMP(cs8x8.bmp) error: %s\n", SDL_GetError());
+        SDL_FreeSurface(screen);
+        SDL_DestroyTexture(scrtex);
+        SDL_DestroyWindow(window);
+        SDL_DestroyRenderer(renderer);
+        SDL_Quit();
+        return 1;
+    }
+    SDL_SetColorKey(charset, true, 0x000000);
 
-	eti = SDL_CreateRGBSurface(0, squareSize, squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    eti = SDL_CreateRGBSurface(0, SQUARE_SIZE, SQUARE_SIZE, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+	ite = SDL_CreateRGBSurface(0, SQUARE_SIZE, SQUARE_SIZE, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    SDL_FillRect(eti, NULL, SDL_MapRGB(eti->format, 255, 255, 0)); 
+	SDL_FillRect(ite, NULL, SDL_MapRGB(ite->format, 0, 255, 0)); 
+    if(eti == NULL) {
+        printf("SDL_LoadBMP(eti.bmp) error: %s\n", SDL_GetError());
+        SDL_FreeSurface(charset);
+        SDL_FreeSurface(screen);
+        SDL_DestroyTexture(scrtex);
+        SDL_DestroyWindow(window);
+        SDL_DestroyRenderer(renderer);
+        SDL_Quit();
+        return 1;
+    }
 
-	SDL_FillRect(eti, NULL, SDL_MapRGB(eti->format, 0, 255, 0)); 
-	if(eti == NULL) {
-		printf("SDL_LoadBMP(eti.bmp) error: %s\n", SDL_GetError());
-		SDL_FreeSurface(charset);
-		SDL_FreeSurface(screen);
-		SDL_DestroyTexture(scrtex);
-		SDL_DestroyWindow(window);
-		SDL_DestroyRenderer(renderer);
-		SDL_Quit();
-		return 1;
-		};
+    char text[128];
+    int czarny = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
+    int zielony = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
+    int czerwony = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
+    int niebieski = SDL_MapRGB(screen->format, 0x11, 0x11, 0xCC);
 
-	char text[128];
-	int czarny = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
-	int zielony = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
-	int czerwony = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
-	int niebieski = SDL_MapRGB(screen->format, 0x11, 0x11, 0xCC);
+    t1 = SDL_GetTicks();
 
+    frames = 0;
+    fpsTimer = 0;
+    fps = 0;
+    quit = 0;
+    ResetGame(worldTime, snake);
 
-	const int BOARD_MARGIN = 80;
-    const int BOARD_WIDTH = SCREEN_WIDTH - (2 * BOARD_MARGIN);
-    const int BOARD_HEIGHT = SCREEN_HEIGHT - (2 * BOARD_MARGIN);
-    const int STATS_HEIGHT = 60;
-    const int STATS_Y = SCREEN_HEIGHT - STATS_HEIGHT - 4;
-    const int STATS_X = 4;
-    const int STATS_WIDTH = SCREEN_WIDTH - 8;
+    static float timeAccumulator = 0.0f;
 
-	int direction = 1;
-
-	t1 = SDL_GetTicks();
-
-	frames = 0;
-	fpsTimer = 0;
-	fps = 0;
-	quit = 0;
-	speed_fix = 10;
-	ResetGame(posX, posY, worldTime, distance, etiSpeed, direction);
-
-	while(!quit) {
-		t2 = SDL_GetTicks();
-		delta = (t2 - t1) * 0.001;
-		t1 = t2;
-
+    while(!quit) {
+        t2 = SDL_GetTicks();
+        delta = (t2 - t1) * 0.001f;
+        t1 = t2;
 		worldTime += delta;
+   		 if (gameState == GAME_RUNNING) {
+        timeAccumulator += delta;
 
-		stepX = etiSpeed * delta * SCREEN_WIDTH / speed_fix;
-		stepY = etiSpeed * delta * SCREEN_HEIGHT / speed_fix;
+        while (timeAccumulator >= (SQUARE_SIZE / (snake.speed * SPEED_FIX))) {
+            int stepX = 0;
+            int stepY = 0;
 
-		double nextX = posX;
-        double nextY = posY;
-        
-        if(direction == 0) nextY -= stepY;
-        else if(direction == 1) nextX += stepX;
-        else if(direction == 2) nextY += stepY;
-        else nextX -= stepX;
+            if (snake.direction == 0) {
+                stepY -= SQUARE_SIZE;
+            }
+            else if (snake.direction == 1) {
+                stepX += SQUARE_SIZE;
+            }
+            else if (snake.direction == 2) {
+                stepY += SQUARE_SIZE;
+            }
+            else if (snake.direction == 3) {
+                stepX -= SQUARE_SIZE;
+            }
 
-		if (!isValidMove(nextX, nextY, BOARD_MARGIN, BOARD_WIDTH, BOARD_HEIGHT, squareSize)) {
-            direction = autoTurn(direction, posX, posY, BOARD_MARGIN, BOARD_WIDTH, BOARD_HEIGHT, squareSize);
-            
-            nextX = posX;
-            nextY = posY;
-            if(direction == 0) nextY -= stepY;
-            else if(direction == 1) nextX += stepX;
-            else if(direction == 2) nextY += stepY;
-            else nextX -= stepX;
+			if (!isValidMove(snake.body[0].x + stepX, snake.body[0].y + stepY)) {
+                autoTurn(snake);
+            }
+			if(checkSnakeCollision(&snake, snake.body[0].x + stepX, snake.body[0].y + stepY)){
+				std::cout<<"oh lord"<<std::endl;
+				gameState = GAME_OVER;
+			}
+			UpdateSnake(snake);
+            timeAccumulator -= (SQUARE_SIZE / (snake.speed * SPEED_FIX));
         }
-		posX = nextX;
-        posY = nextY;
 
+        SDL_FillRect(screen, NULL, czarny);
+        DrawRectangle(screen, BOARD_MARGIN, BOARD_MARGIN, BOARD_WIDTH, BOARD_HEIGHT, zielony, czarny); 
+        drawGrid(screen, SDL_MapRGB(screen->format, 0x33, 0x33, 0x33)); // Dark gray color for the grid
+        DrawRectangle(screen, STATS_X, STATS_Y, STATS_WIDTH, STATS_HEIGHT, czerwony, niebieski);
 
-		SDL_FillRect(screen, NULL, czarny);
-		DrawRectangle(screen, BOARD_MARGIN, BOARD_MARGIN, BOARD_WIDTH, BOARD_HEIGHT, zielony, czarny); 
+        sprintf(text, "Score: %d", 0);
+        DrawString(screen, STATS_X + (STATS_WIDTH/2) - BOARD_MARGIN, STATS_Y + BOARD_MARGIN/2, text, charset);
 
-		DrawRectangle(screen, STATS_X, STATS_Y, STATS_WIDTH, STATS_HEIGHT, czerwony, niebieski);
+        sprintf(text, "Length: %d", snake.length);
+        DrawString(screen, STATS_X + STATS_WIDTH - BOARD_MARGIN, STATS_Y + BOARD_MARGIN/2, text, charset);
 
-		sprintf(text, "Score: %d", 0);
-		DrawString(screen, STATS_X + (STATS_WIDTH/2) - BOARD_MARGIN, STATS_Y + BOARD_MARGIN/2, text, charset);
+        sprintf(text, "ESC - quit, N - new game");
+        DrawString(screen, STATS_X, STATS_Y + BOARD_MARGIN/2, text, charset);
+		DrawSurface(screen, eti, snake.body[0].x, snake.body[0].y);
+		for (int i = 1; i <snake.length; i++) {
+        	DrawSurface(screen, ite, snake.body[i].x, snake.body[i].y);
+		}
+        fpsTimer += delta;
+        if(fpsTimer > 0.5) {
+            fps = frames * 2;
+            frames = 0;
+            fpsTimer -= 0.5;
+        }
 
-		sprintf(text, "Length: %d", 1);
-		DrawString(screen, STATS_X + STATS_WIDTH - BOARD_MARGIN, STATS_Y + BOARD_MARGIN/2, text, charset);
+        DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 36, czerwony, niebieski);
+        sprintf(text, "czas trwania = %.1lf s  %.0lf klatek / s, kierunek: %d", worldTime, fps, snake.direction);
+        DrawString(screen, screen->w / 2 - strlen(text) * 8 / 2, 10, text, charset);
+        SDL_UpdateTexture(scrtex, NULL, screen->pixels, screen->pitch);
+        SDL_RenderCopy(renderer, scrtex, NULL, NULL);
+        SDL_RenderPresent(renderer);
 
-		sprintf(text, "ESC - quit, N - new game");
-		DrawString(screen, STATS_X, STATS_Y + BOARD_MARGIN/2, text, charset);
-		DrawSurface(screen, eti, posX, posY);
-		fpsTimer += delta;
-		if(fpsTimer > 0.5) {
-			fps = frames * 2;
-			frames = 0;
-			fpsTimer -= 0.5;
-			};
+        while(SDL_PollEvent(&event)) {
+            switch(event.type) {
+                case SDL_KEYDOWN:
+                    if(event.key.keysym.sym == SDLK_ESCAPE) quit = 1;
+                    else if(event.key.keysym.sym == SDLK_n) ResetGame(worldTime, snake);
+                    else if(event.key.keysym.sym == SDLK_UP){
+						snake.direction = 0;
+					} 
+                    else if(event.key.keysym.sym == SDLK_RIGHT){
+						snake.direction = 1;
+					} 
+                    else if(event.key.keysym.sym == SDLK_DOWN){
+						snake.direction = 2;
+					} 
+                    else if(event.key.keysym.sym == SDLK_LEFT){
+						snake.direction = 3;
+					}
+                    break;
+                case SDL_QUIT:
+                    quit = 1;
+                    break;
+            };
+        }
+		}
+		else if (gameState == GAME_OVER) {
+			SDL_FillRect(screen, NULL, czarny);
+			drawGameOver(screen,charset,1,&gameState);
+			SDL_UpdateTexture(scrtex, NULL, screen->pixels, screen->pitch);
+			SDL_RenderCopy(renderer, scrtex, NULL, NULL);
+			SDL_RenderPresent(renderer);
+			handleGameOverInput(&event, &quit, &gameState, &snake, &worldTime);
+		}
+		
+        frames++;
+    }
 
-		DrawRectangle(screen, 4, 4, SCREEN_WIDTH - 8, 36, czerwony, niebieski);
-		sprintf(text, "czas trwania = %.1lf s  %.0lf klatek / s", worldTime, fps);
-		DrawString(screen, screen->w / 2 - strlen(text) * 8 / 2, 10, text, charset);
+    SDL_FreeSurface(charset);
+    SDL_FreeSurface(screen);
+    SDL_DestroyTexture(scrtex);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
 
-		SDL_UpdateTexture(scrtex, NULL, screen->pixels, screen->pitch);
-//		SDL_RenderClear(renderer);
-		SDL_RenderCopy(renderer, scrtex, NULL, NULL);
-		SDL_RenderPresent(renderer);
-
-		while(SDL_PollEvent(&event)) {
-			switch(event.type) {
-				case SDL_KEYDOWN:
-					if(event.key.keysym.sym == SDLK_ESCAPE) quit = 1;
-					else if(event.key.keysym.sym == SDLK_n) ResetGame(posX, posY, worldTime, distance, etiSpeed, direction);
-					else if(event.key.keysym.sym == SDLK_UP) direction = 0;
-					else if(event.key.keysym.sym == SDLK_RIGHT) direction = 1;
-					else if(event.key.keysym.sym == SDLK_DOWN) direction = 2;
-					else if(event.key.keysym.sym == SDLK_LEFT) direction = 3;
-					break;
-				case SDL_QUIT:
-					quit = 1;
-					break;
-				};
-			};
-		frames++;
-	};
-
-	SDL_FreeSurface(charset);
-	SDL_FreeSurface(screen);
-	SDL_DestroyTexture(scrtex);
-	SDL_DestroyRenderer(renderer);
-	SDL_DestroyWindow(window);
-
-	SDL_Quit();
-	return 0;
-	};
+    SDL_Quit();
+    return 0;
+};
