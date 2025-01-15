@@ -34,6 +34,9 @@ typedef struct {
     int progressBarHeight;
     int redDotBonus;
     int blueDotBonus;
+    double speedUpTime;
+    double speedUpAmount;
+    char filename[128];
 } config_t;
 
 typedef enum {
@@ -51,6 +54,7 @@ typedef struct {
     int length;
     int direction;
     double speed;
+    int score;
 } snake_t;
 
 typedef struct {
@@ -68,9 +72,23 @@ typedef struct {
     int blue;
 } colors_t;
 
-void randomizePosition(position_t &pos, snake_t *snake, config_t config);
-void spawnRedDot(red_dot_t* redDot, snake_t* snake, float worldTime, position_t blueDotPos, config_t config);
+typedef struct {
+    float timeAccumulator;
+    float delta;
+    double nextIncrease;
+    double worldTime;
+    double fps;
+    double fpsTimer;
+    int frames;
+    double t1;
+    double t2;
+} time_variables_t;
+
+void randomizePosition(position_t &pos, snake_t& snake, config_t config);
+void spawnRedDot(red_dot_t& redDot, snake_t* snake, float worldTime, position_t blueDotPos, config_t config);
 void updateScore(int& score, char a,  config_t config);
+void saveGameState(snake_t snake, red_dot_t redDot,time_variables_t timeVars,position_t blueDot,config_t config);
+void loadGameState(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVars, position_t& blueDotPos, config_t config);
 
 void DrawString(SDL_Surface *screen, int x, int y, const char *text, SDL_Surface *charset) {
 	int px, py, c;
@@ -126,7 +144,7 @@ void DrawRectangle(SDL_Surface *screen, int x, int y, int l, int k, Uint32 outli
 		DrawLine(screen, x + 1, i, l - 2, 1, 0, fillColor);
 	};
 
-void ResetGame(double &worldTime, snake_t &snake, position_t& blueDotPos, red_dot_t& redDot, int &score, config_t config) {
+void ResetGame(time_variables_t& timeVars, snake_t &snake, position_t& blueDotPos, red_dot_t& redDot, config_t config) {
 	snake.length = config.minSnakeLength;
 	for(int i = 0; i<snake.length; i++){
 		snake.body[i].x = config.screenWidth / 2 - (i *config.squareSize);
@@ -134,11 +152,12 @@ void ResetGame(double &worldTime, snake_t &snake, position_t& blueDotPos, red_do
 	}
 	snake.speed = 1;
 	snake.direction = 1;
-    worldTime = 0;
+    timeVars.worldTime = 0;
+    timeVars.timeAccumulator = 0;
 
-    randomizePosition(blueDotPos,&snake, config);
-    spawnRedDot(&redDot,&snake,worldTime,blueDotPos, config);
-    score = 0;
+    randomizePosition(blueDotPos,snake, config);
+    spawnRedDot(redDot,&snake,timeVars.worldTime,blueDotPos, config); // not randomizing the red dot - BUG!
+    snake.score = 0;
 }
 
 int isValidMove(position_t nextPos, config_t config) {
@@ -243,7 +262,7 @@ int checkSnakeCollision(snake_t* snake, int nextX, int nextY) { //revise for sho
 	return 0;
 }
 
-void randomizePosition(position_t &pos, snake_t *snake, config_t config) {
+void randomizePosition(position_t &pos, snake_t& snake, config_t config) {
     int validPosition;
     int i;
 
@@ -252,8 +271,8 @@ void randomizePosition(position_t &pos, snake_t *snake, config_t config) {
         pos.y = config.margin + (rand() % (config.height / config.squareSize)) * config.squareSize + config.squareSize / 2;
 
         validPosition = 1;
-        for (i = 0; i < snake->length; i++) {
-            if (pos.x == snake->body[i].x && pos.y == snake->body[i].y) {
+        for (i = 0; i < snake.length; i++) {
+            if (pos.x == snake.body[i].x && pos.y == snake.body[i].y) {
                 validPosition = 0;
                 break;
             }
@@ -261,10 +280,10 @@ void randomizePosition(position_t &pos, snake_t *snake, config_t config) {
     } while (!validPosition);
 }
 
-void checkBlueDot(snake_t* snake, int nextX, int nextY, position_t &blue_dot_pos,int& score, config_t config) {
-	if (nextX == blue_dot_pos.x && nextY == blue_dot_pos.y &&snake->length <=config.maxSnakeLength) {
-		snake->length++;
-        updateScore(score, 'b', config);
+void checkBlueDot(snake_t& snake, int nextX, int nextY, position_t &blue_dot_pos, config_t config) {
+	if (nextX == blue_dot_pos.x && nextY == blue_dot_pos.y &&snake.length <=config.maxSnakeLength) {
+		snake.length++;
+        updateScore(snake.score, 'b', config);
 		randomizePosition(blue_dot_pos, snake, config);
 	}
 }
@@ -304,7 +323,7 @@ void drawGameOver(SDL_Surface* screen, SDL_Surface* charset, int score, game_sta
               windowY + 120, text, charset);
 }
 
-void handleGameOverInput(SDL_Event& event, int& quit, game_state_t& gameState, snake_t& snake,  double& worldTime, position_t blueDotPos, red_dot_t redDot,int& score,config_t config) {
+void handleGameOverInput(SDL_Event& event, int& quit, game_state_t& gameState, snake_t& snake,  time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, config_t config) {
     while(SDL_PollEvent(&event)) {
         switch(event.type) {
             case SDL_KEYDOWN:
@@ -312,7 +331,7 @@ void handleGameOverInput(SDL_Event& event, int& quit, game_state_t& gameState, s
                     quit = 1;
                 }
                 else if(event.key.keysym.sym == SDLK_n) {
-                    ResetGame(worldTime, snake, blueDotPos, redDot, score, config);
+                    ResetGame(timeVars, snake, blueDotPos, redDot, config);
                     gameState = GAME_RUNNING;
                 }
                 break;
@@ -340,8 +359,8 @@ void drawCircle(SDL_Surface* surface, int centerX, int centerY, int radius, Uint
     }
 }
 
-void spawnRedDot(red_dot_t* redDot, snake_t* snake, float worldTime, position_t blueDotPos, config_t config) { // add a check for no blue and red dot collision!
-    if (redDot->isActive) return;
+void spawnRedDot(red_dot_t& redDot, snake_t* snake, float worldTime, position_t blueDotPos, config_t config) { // add a check for no blue and red dot collision!
+    if (redDot.isActive) return;
 
     SDL_Point newPos;
     int validPosition = 0;
@@ -359,16 +378,16 @@ void spawnRedDot(red_dot_t* redDot, snake_t* snake, float worldTime, position_t 
         }
     }
 
-    redDot->position = newPos;
-    redDot->spawnTime = worldTime;
-    redDot->isActive = 1;
+    redDot.position = newPos;
+    redDot.spawnTime = worldTime;
+    redDot.isActive = 1;
 }
 
-void checkRedDot(snake_t* snake, red_dot_t* redDot, int& score, config_t config) {
-    if (!redDot->isActive) return;
+void checkRedDot(snake_t* snake, red_dot_t& redDot, config_t config) {
+    if (!redDot.isActive) return;
 
-    if (redDot->position.x == snake->body[0].x && 
-        snake->body[0].y == redDot->position.y) {
+    if (redDot.position.x == snake->body[0].x && 
+        snake->body[0].y == redDot.position.y) {
         if (rand() % 2 == 0) {
             int newLength = snake->length - config.shortenLength;
             if (newLength < config.minSnakeLength){
@@ -384,8 +403,8 @@ void checkRedDot(snake_t* snake, red_dot_t* redDot, int& score, config_t config)
                 snake->speed = config.defaultSnakeSpeed;
             }
         }
-        updateScore(score, 'r', config);
-        redDot->isActive = 0;
+        updateScore(snake->score, 'r', config);
+        redDot.isActive = 0;
     }
 }
 
@@ -424,20 +443,20 @@ void drawProgressBar(SDL_Surface* screen, red_dot_t* redDot, float worldTime, co
     DrawString(screen, borderRect.x, borderRect.y + config.progressBarHeight + 10, timeText, charset);
 }
 
-void updateBonusSystem(snake_t* snake, red_dot_t* redDot, float worldTime, position_t blueDotPos,int& score, config_t config) {
-    if (!redDot->isActive && worldTime >= redDot->spawnTime) {
+void updateBonusSystem(snake_t* snake, red_dot_t& redDot, float worldTime, position_t blueDotPos,int& score, config_t config) {
+    if (!redDot.isActive && worldTime >= redDot.spawnTime) {
         spawnRedDot(redDot, snake, worldTime, blueDotPos, config);
         float spawnInterval = config.minSpawnInterval + 
             (rand()%2) * 
             (config.maxSpawnInterval- config.minSpawnInterval);
-        redDot->spawnTime = worldTime + spawnInterval;
+        redDot.spawnTime = worldTime + spawnInterval;
     }
 
-    checkRedDot(snake, redDot, score, config);
+    checkRedDot(snake, redDot, config);
 
-    if (redDot->isActive && 
-        (worldTime - redDot->spawnTime) >= redDot->displayDuration) {
-        redDot->isActive = 0;
+    if (redDot.isActive && 
+        (worldTime - redDot.spawnTime) >= redDot.displayDuration) {
+        redDot.isActive = 0;
     }
 }
 
@@ -454,8 +473,8 @@ void updateScore(int& score, char a,  config_t config){
     }
 }
 
-void processSnakeMovement(snake_t& snake, const config_t& config, float& timeAccumulator, position_t& blueDotPos, int& score, red_dot_t& redDot, int worldTime, game_state_t& gameState) {
-    while (timeAccumulator >= (config.squareSize / (snake.speed * config.speedFix))) {
+void processSnakeMovement(snake_t& snake, config_t& config, time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, game_state_t& gameState) {
+    while (timeVars.timeAccumulator >= (config.squareSize / (snake.speed * config.speedFix))) {
         int stepX = 0;
         int stepY = 0;
 
@@ -485,21 +504,23 @@ void processSnakeMovement(snake_t& snake, const config_t& config, float& timeAcc
             return;
         }
 
-        checkBlueDot(&snake, nextX, nextY, blueDotPos, score, config);
-        updateBonusSystem(&snake, &redDot, worldTime, blueDotPos, score, config);
+        checkBlueDot(snake, nextX, nextY, blueDotPos, config);
+        updateBonusSystem(&snake, redDot, timeVars.worldTime, blueDotPos, snake.score, config);
 
         UpdateSnake(snake, config);
 
-        timeAccumulator -= (config.squareSize / (snake.speed * config.speedFix));
+        timeVars.timeAccumulator -= (config.squareSize / (snake.speed * config.speedFix));
     }
 }
 
-void handleGameRunningInput(SDL_Event &event,int& quit, snake_t& snake,  double& worldTime, position_t blueDotPos, red_dot_t redDot,int& score,config_t config) {
+void handleGameRunningInput(SDL_Event &event,int& quit, snake_t& snake,time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot,config_t config) {
     while(SDL_PollEvent(&event)) {
             switch(event.type) {
                 case SDL_KEYDOWN:
                     if(event.key.keysym.sym == SDLK_ESCAPE) quit = 1;
-                    else if(event.key.keysym.sym == SDLK_n) ResetGame(worldTime, snake, blueDotPos, redDot, score, config);
+                    else if(event.key.keysym.sym == SDLK_n) ResetGame(timeVars, snake, blueDotPos, redDot, config);
+                    else if(event.key.keysym.sym == SDLK_s) saveGameState(snake, redDot,timeVars,blueDotPos, config);
+                    else if(event.key.keysym.sym == SDLK_i) loadGameState(snake, redDot,timeVars,blueDotPos, config);
                     else if(event.key.keysym.sym == SDLK_UP){
 						snake.direction = 0;
 					} 
@@ -526,17 +547,14 @@ void renderScren (SDL_Texture *scrtex, SDL_Surface *screen,SDL_Renderer *rendere
     SDL_RenderPresent(renderer);
 }
 
-void drawBottomStats (config_t config, colors_t colors, SDL_Surface *screen,int& score, snake_t snake, SDL_Surface* charset,char* text) {
-    DrawRectangle(screen, config.x, config.y, config.statsWidth, config.statsHeight, colors.black, colors.green);
-
-    snprintf(text, sizeof(text), "Score: %d, speed: %f", score, snake.speed);
-    DrawString(screen, config.x + (config.statsWidth/2) - config.margin, config.y + config.margin/2, text, charset);
-
-    snprintf(text, sizeof(text), "Length: %d", snake.length);
-    DrawString(screen, config.x + config.statsWidth - config.margin, config.y + config.margin/2, text, charset);
-
-    snprintf(text, sizeof(text), "ESC - quit, N - new game");
-    DrawString(screen, config.x, config.y + config.margin/2, text, charset);
+void drawBottomStats (config_t config, colors_t colors, SDL_Surface *screen, SDL_Surface* charset,char* text) {
+    DrawRectangle(screen, config.x/4, config.y, config.statsWidth, config.statsHeight, colors.green, colors.black);
+    snprintf(text,config.screenWidth, "wymagania: 1, 2, 3, 4, A, B, C, D");
+    DrawString(screen,2*config.x,config.screenHeight-config.statsHeight, text, charset);
+    snprintf(text, config.screenWidth, "ESC - wyjdz, N - nowa gra");
+    DrawString(screen,config.screenWidth/2 + 2*config.x,config.screenHeight-config.statsHeight, text, charset);
+    snprintf(text, config.screenWidth, "S - zapisz, I - zaladuj zapisana");
+    DrawString(screen,config.screenWidth/2 + 2*config.x,config.screenHeight-config.statsHeight/2, text, charset);
 }
 
 void drawGameElements (config_t config, colors_t colors, SDL_Surface *screen, snake_t snake, SDL_Surface* blue_dot,SDL_Surface* red_dot, position_t blueDotPos, SDL_Surface* eti, SDL_Surface* ite, red_dot_t redDot, SDL_Surface* charset,double worldTime, char* text) {
@@ -553,21 +571,121 @@ void drawGameElements (config_t config, colors_t colors, SDL_Surface *screen, sn
     }
 }
 
-void drawTopStats(config_t config, colors_t colors, SDL_Surface *screen, SDL_Surface* charset, double& fpsTimer, int delta, double fps, int frames, double worldTime, char* text) {
-    
-    fpsTimer += delta;
-    if(fpsTimer > 0.5) {
-        fps = frames * 2;
-        frames = 0;
-        fpsTimer -= 0.5;
-    }
-    DrawRectangle(screen, 4, 4, config.screenWidth - 8, 36, colors.green, colors.black);
-    snprintf(text, sizeof(text), "czas trwania = %.1lf s  %.0lf klatek / s", worldTime, fps);
-    DrawString(screen,10 , 20, text, charset);
-    snprintf(text, sizeof(text), "wymagania: 1, 2, 3, 4, A, B");
-    DrawString(screen,2*config.screenWidth/3 ,20, text, charset);
+void drawTopStats(config_t config, colors_t colors, SDL_Surface *screen, SDL_Surface* charset, time_variables_t timeVars, char* text, snake_t snake) {
+    DrawRectangle(screen, 4, 4, config.screenWidth-8, 60, colors.green, colors.black);
+    snprintf(text, config.screenWidth, "czas trwania = %.1lf s  %.0lf klatek / s", timeVars.worldTime, timeVars.fps);
+    DrawString(screen,16 , 20, text, charset);
+    snprintf(text, config.screenWidth, "dlugoscs: %d", snake.length);
+    DrawString(screen,5*config.screenWidth/6, 40, text, charset);
+    snprintf(text, config.screenWidth, "wynik: %d, predkosc: %f", snake.score, snake.speed);
+    DrawString(screen, 16, 40, text, charset);
 }
 
+void handleTimeIncrease(time_variables_t& timeVars, snake_t& snake, config_t config) {
+    timeVars.timeAccumulator += timeVars.delta;
+    if(timeVars.worldTime > timeVars.nextIncrease){
+        snake.speed += config.speedUpAmount;
+        timeVars.nextIncrease += config.speedUpTime;
+    }
+}
+
+void handleTimeUpdate(time_variables_t& timeVars) {
+    timeVars.t2 = SDL_GetTicks();
+    timeVars.delta = (timeVars.t2 - timeVars.t1) * 0.001f;
+    timeVars.t1 = timeVars.t2;
+    timeVars.worldTime += timeVars.delta;
+}
+
+// void updateFPS(time_variables_t& timeVars) {
+//     timeVars.fpsTimer += timeVars.delta;
+//     if(timeVars.fpsTimer > 0.5) {
+//         timeVars.fps = timeVars.frames * 2;
+//         timeVars.frames = 0;
+//         timeVars.fpsTimer -= 0.5;
+//     }
+// }
+
+void saveGameState(snake_t snake, red_dot_t redDot,time_variables_t timeVars,position_t blueDot,config_t config) {
+    FILE* file = fopen(config.filename, "w");
+    if (!file) {
+        perror("Error opening file for saving");
+        return;
+    }
+
+    fprintf(file, "%d\n", snake.length);
+    fprintf(file, "%d\n", snake.direction);
+    fprintf(file, "%lf\n", snake.speed);
+    fprintf(file, "%d\n", snake.score);
+    for (int i = 0; i < snake.length; i++) {
+        fprintf(file, "%d %d\n", snake.body[i].x, snake.body[i].y);
+    }
+
+    fprintf(file, "%d %d\n", redDot.position.x, redDot.position.y);
+    fprintf(file, "%f\n", redDot.spawnTime);
+    fprintf(file, "%f\n", redDot.displayDuration);
+    fprintf(file, "%d\n", redDot.isActive);
+
+    fprintf(file, "%lf\n", timeVars.worldTime);
+    fprintf(file, "%lf\n", timeVars.nextIncrease);
+
+    fprintf(file, "%d %d\n", blueDot.x, blueDot.y);
+
+    fclose(file);
+}
+
+int loadFromFile(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVars, position_t& blueDotPos, config_t config) {
+    FILE* file = fopen(config.filename, "r");
+    if (!file) {
+        perror("Error opening file for loading");
+        return 0;
+    }
+    ResetGame(timeVars, snake, blueDotPos,redDot, config);
+    if (fscanf(file, "%d", &snake.length) != 1) return 0;
+    if (fscanf(file, "%d", &snake.direction) != 1) return 0;
+    if (fscanf(file, "%lf", &snake.speed) != 1) return 0;
+    if (fscanf(file, "%d", &snake.score) != 1) return 0;
+    for (int i = 0; i < snake.length; i++) {
+        if (fscanf(file, "%d %d", &snake.body[i].x, &snake.body[i].y) != 2) return 0;
+    }
+
+    // Load red_dot not correct
+    if (fscanf(file, "%d %d", &redDot.position.x, &redDot.position.y) != 2) return 0;
+    if (fscanf(file, "%f", &redDot.spawnTime) != 1) return 0;
+    if (fscanf(file, "%f", &redDot.displayDuration) != 1) return 0;
+    if (fscanf(file, "%d", &redDot.isActive) != 1) return 0;
+
+    // Load worldTime and nextIncrease to check
+    if (fscanf(file, "%lf", &timeVars.worldTime) != 1) return 0;
+    if (fscanf(file, "%lf", &timeVars.nextIncrease) != 1) return 0;
+
+    if (fscanf(file, "%d %d", &blueDotPos.x, &blueDotPos.y) != 2) return 0;
+
+    fclose(file);
+    return 1;
+}
+
+int isFileNotEmpty(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        return 0;
+    }
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fclose(file);
+    return fileSize > 0;
+}
+
+void loadGameState(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVars, position_t& blueDotPos, config_t config){
+    if (isFileNotEmpty(config.filename)) {
+        if (loadFromFile(snake, redDot, timeVars, blueDotPos, config)) {
+            printf("Game state loaded successfully!\n");
+        } else {
+            printf("Failed to load game state.\n");
+        }
+    } else {
+        printf("No data available to load.\n");
+    }
+}
 
 #ifdef __cplusplus
 extern "C"
@@ -584,7 +702,7 @@ int main(int argc, char **argv) {
         .height = (31 * 20) - (2 * (4 * 20)),
         .statsHeight = 3 * 20,
         .y = (31 * 20) - (3 * 20) - 4,
-        .x = 4,
+        .x = 16,
         .statsWidth = (31 * 20) - 8,
         .speedFix = 100,
         .maxSnakeLength = 20,
@@ -600,32 +718,38 @@ int main(int argc, char **argv) {
         .progressBarHeight = 100,
         .redDotBonus = 150,
         .blueDotBonus = 100,
+        .speedUpTime = 3,
+	    .speedUpAmount= 0.1,
+        .filename = "game_state.txt",
     };
 
 	srand(time(NULL));
 	game_state_t gameState = GAME_RUNNING;
-    int t1, t2, quit, frames, rc;
-    double delta, worldTime, fpsTimer, fps;
+    int quit, rc;
     int stepX, stepY;
-	double speedUpTime = 3;
-	double speedUpAmount= 0.1;
-	double nextIncrease = speedUpAmount;
-    int score = 0;
 
+    time_variables_t timeVars = {
+        .nextIncrease = config.speedUpAmount,
+        .worldTime = 0,
+        .fpsTimer = 0,
+        .fps = 0,
+        .t1 = 0,
+        .t2 = 0,
+    };
+    
     snake_t snake;
     snake.direction = 1;
     snake.length = config.defaultSnakeLength;
     snake.speed = config.defaultSnakeSpeed;
 
 	position_t blueDotPos;
-	randomizePosition(blueDotPos, &snake, config);
+	randomizePosition(blueDotPos, snake, config);
 
     red_dot_t redDot = {
         .isActive = 0,
         .displayDuration = 5,
     };    
-    ResetGame(worldTime, snake, blueDotPos, redDot, score, config);
-
+    ResetGame(timeVars, snake, blueDotPos, redDot, config);
 
     SDL_Event event;
     SDL_Surface *screen, *charset;
@@ -702,7 +826,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    char text[128];
+    char text[256];
     colors_t colors = {
         .black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00),
         .green = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00),
@@ -711,69 +835,33 @@ int main(int argc, char **argv) {
     };
     
 
-    t1 = SDL_GetTicks();
-
-    frames = 0;
-    fpsTimer = 0;
-    fps = 0;
+    timeVars.t1 = SDL_GetTicks();
+    timeVars.frames = 0;
     quit = 0;
-    ResetGame(worldTime, snake, blueDotPos, redDot, score, config);
-
-    static float timeAccumulator = 0.0f;
-
+    ResetGame(timeVars, snake, blueDotPos, redDot, config);
     while(!quit) {
-        t2 = SDL_GetTicks();
-        delta = (t2 - t1) * 0.001f;
-        t1 = t2;
-		worldTime += delta;
+        handleTimeUpdate(timeVars);
 		if (gameState == GAME_RUNNING) {
-            timeAccumulator += delta;
-
-            if(worldTime > nextIncrease){
-                snake.speed +=speedUpAmount;
-                nextIncrease += speedUpTime;
-            }
-
-            processSnakeMovement(snake, config, timeAccumulator, blueDotPos, score, redDot, worldTime, gameState);
-
+            handleTimeIncrease(timeVars,snake,config);
+            processSnakeMovement(snake, config, timeVars, blueDotPos, redDot, gameState);
+            // updateFPS(timeVars);
             SDL_FillRect(screen, NULL, colors.black);
             DrawRectangle(screen, config.margin, config.margin, config.width, config.height, colors.green, colors.black); 
             drawGrid(screen, SDL_MapRGB(screen->format, 0x33, 0x33, 0x33), config);
-            drawGameElements(config,colors,screen,snake,blue_dot,red_dot,blueDotPos,eti,ite,redDot,charset,worldTime,text);
-
-            // draw top stats
-            fpsTimer += delta;
-            if(fpsTimer > 0.5) {
-                fps = frames * 2;
-                frames = 0;
-                fpsTimer -= 0.5;
-            }
-            DrawRectangle(screen, 4, 4, config.screenWidth - 8, 36, colors.green, colors.black);
-            snprintf(text, sizeof(text), "czas trwania = %.1lf s  %.0lf klatek / s", worldTime, fps);
-            DrawString(screen,10 , 20, text, charset);
-            snprintf(text, sizeof(text), "wymagania: 1, 2, 3, 4, A, B");
-            DrawString(screen,2*config.screenWidth/3 ,20, text, charset);
-
-            // drawBottomStats(config,colors,screen,score,snake,charset,text);
-            DrawRectangle(screen, config.x, config.y, config.statsWidth, config.statsHeight, colors.green, colors.black);
-            snprintf(text, sizeof(text), "Score: %d, speed: %f", score, snake.speed);
-            DrawString(screen, config.x + (config.statsWidth/2) - config.margin, config.y + config.margin/2, text, charset);
-            snprintf(text, sizeof(text), "Length: %d", snake.length);
-            DrawString(screen, config.x + config.statsWidth - config.margin, config.y + config.margin/2, text, charset);
-            snprintf(text, sizeof(text), "ESC - quit, N - new game");
-            DrawString(screen, config.x, config.y + config.margin/2, text, charset);
-
+            drawGameElements(config,colors,screen,snake,blue_dot,red_dot,blueDotPos,eti,ite,redDot,charset,timeVars.worldTime,text);
+            drawTopStats(config,colors,screen, charset,timeVars,text, snake);
+            drawBottomStats(config,colors,screen,charset,text);
             renderScren(scrtex,screen,renderer);
-            handleGameRunningInput(event, quit, snake, worldTime, blueDotPos, redDot, score, config);
+            handleGameRunningInput(event, quit, snake, timeVars, blueDotPos, redDot, config);
 		}
 		else if (gameState == GAME_OVER) {
 			SDL_FillRect(screen, NULL, colors.black);
-			drawGameOver(screen,charset, score,&gameState, config);
+			drawGameOver(screen,charset, snake.score,&gameState, config);
 			renderScren(scrtex, screen,renderer);
-			handleGameOverInput(event, quit, gameState, snake, worldTime, blueDotPos, redDot, score, config);
+			handleGameOverInput(event, quit, gameState, snake, timeVars, blueDotPos, redDot, config);
 		}
 		
-        frames++;
+        timeVars.frames++;
     }
 
     SDL_FreeSurface(charset);
