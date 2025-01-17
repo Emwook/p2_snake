@@ -51,6 +51,20 @@ typedef enum {
     WELCOME_SCREEN,
 } game_state_t;
 
+typedef enum {
+    SNAKE_HEAD,
+    SNAKE_BODY_BIG,
+    SNAKE_BODY_SMALL,
+    SNAKE_TAIL,
+} snake_part_t;
+
+typedef enum {
+    UP,
+    RIGHT,
+    DOWN,
+    LEFT,
+} directions_t;
+
 typedef struct {
     int x;
     int y;
@@ -59,7 +73,7 @@ typedef struct {
 typedef struct {
     position_t body[100];
     int length;
-    int direction;
+    directions_t direction[20];
     double speed;
     int score;
     char playerName[20];
@@ -100,15 +114,15 @@ typedef struct {
 typedef struct{
     SDL_Event event;
     SDL_Surface *screen;
-    SDL_Surface *charset;
-    SDL_Surface *eti;
-	SDL_Surface *ite;
+    SDL_Texture *charset;
+    SDL_Rect srcRect;
+    SDL_Rect dstRect;
 	SDL_Surface *blue_dot;
     SDL_Surface *red_dot;
     SDL_Texture *scrtex;
     SDL_Window  *window;
     SDL_Renderer *renderer;
-
+    SDL_Surface *cr;
 } graphics_t;
 
 void randomizePosition(position_t &pos, snake_t& snake, config_t config, red_dot_t redDot);
@@ -118,6 +132,71 @@ void saveGameState(snake_t snake, red_dot_t redDot,time_variables_t timeVars,pos
 void loadGameState(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVars, position_t& blueDotPos, config_t config);
 void updateScoreboard(snake_t snake, config_t config);
 void drawTopStats(config_t config, colors_t colors, graphics_t graphics,time_variables_t timeVars, char* text, snake_t snake);
+
+void DrawSpriteScaled(graphics_t graphics, int destX, int destY, int spriteX, int spriteY, int scale, config_t config) {
+    SDL_Rect srcRect = {
+        .x = spriteX * 8,
+        .y = spriteY * 8,
+        .w = 8,
+        .h = 8
+    };
+    
+    SDL_Rect destRect = {
+        .x = destX - config.squareSize/2,
+        .y = destY - config.squareSize/2,
+        .w = 8 * scale,
+        .h = 8 * scale
+    };
+
+    SDL_Surface* temp = SDL_CreateRGBSurface(0, destRect.w, destRect.h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    SDL_Rect scaledRect = {
+        .x = 0,
+        .y = 0,
+        .w = destRect.w,
+        .h = destRect.h
+    };
+
+    int result = SDL_BlitScaled(graphics.cr, &srcRect, temp, &scaledRect);
+    result = SDL_BlitSurface(temp, NULL, graphics.screen, &destRect);
+    SDL_FreeSurface(temp);
+}
+
+
+void DrawSnakePart(graphics_t graphics, int x, int y, snake_part_t type, config_t config, directions_t direction) {
+    int spriteY = 9;
+    
+    switch (direction) {
+        case UP:
+            spriteY = 8;
+            break;
+        case RIGHT:
+            spriteY = 9;
+            break;
+        case DOWN:
+            spriteY = 10;
+            break;
+        case LEFT:
+            spriteY = 11;
+            break;
+    }
+
+    switch(type) {
+        case SNAKE_HEAD:
+            DrawSpriteScaled(graphics, x, y, 0, spriteY, 2, config);
+            break;
+        case SNAKE_BODY_SMALL:
+            DrawSpriteScaled(graphics, x, y, 2, spriteY, 2, config);
+            break;
+        case SNAKE_BODY_BIG:
+            DrawSpriteScaled(graphics, x, y, 1, spriteY, 2, config);
+            break;
+        case SNAKE_TAIL:
+            DrawSpriteScaled(graphics, x, y, 3, spriteY, 2, config);
+            break;
+    }
+}
+
+
 
 void DrawString(graphics_t graphics, int x, int y, const char *text) {
 	int px, py, c;
@@ -134,7 +213,7 @@ void DrawString(graphics_t graphics, int x, int y, const char *text) {
 		s.y = py;
 		d.x = x;
 		d.y = y;
-		SDL_BlitSurface(graphics.charset, &s, graphics.screen, &d);
+		SDL_BlitSurface(graphics.cr, &s, graphics.screen, &d);
 		x += 8;
 		text++;
 	};
@@ -180,7 +259,7 @@ void ResetGame(time_variables_t& timeVars, snake_t &snake, position_t& blueDotPo
     	snake.body[i].y  = config.screenHeight / 2;
 	}
 	snake.speed = 1;
-	snake.direction = 1;
+	snake.direction[0] = RIGHT;
     timeVars.worldTime = 0;
     timeVars.timeAccumulator = 0;
 
@@ -202,8 +281,8 @@ int isValidMove(position_t nextPos, config_t config) {
 
 void autoTurn(snake_t &snake, config_t config) {
     int step = config.squareSize;
-	int rightTurn = (snake.direction + 1) % 4;
-    int leftTurn = (snake.direction + 3) % 4;
+	int rightTurn = (snake.direction[0] + 1) % 4;
+    int leftTurn = (snake.direction[0] + 3) % 4;
     
     position_t rightPos = {
         .x =  snake.body[0].x,
@@ -244,12 +323,12 @@ void autoTurn(snake_t &snake, config_t config) {
     }
     
     if (isValidMove(rightPos, config)) {
-        snake.direction = rightTurn;
+        snake.direction[0] = (directions_t) rightTurn;
         return;
     }
     
     if (isValidMove(leftPos, config)) {
-        snake.direction = leftTurn;
+        snake.direction[0] = (directions_t) leftTurn;
         return;
     }
 }
@@ -267,18 +346,19 @@ void drawGrid(graphics_t graphics, Uint32 color, config_t config) {
 void UpdateSnake(snake_t &snake, config_t config) {
     for (int i = snake.length - 1; i > 0; --i) {
         snake.body[i] = snake.body[i - 1];
+        snake.direction[i] = snake.direction[i-1];
     }
 
-    if (snake.direction == 0) {
+    if (snake.direction[0] == UP) {
         snake.body[0].y -= config.squareSize;
     } 
-    else if (snake.direction == 1) {
+    else if (snake.direction[0] == RIGHT) {
         snake.body[0].x += config.squareSize;
     } 
-    else if (snake.direction == 2) {
+    else if (snake.direction[0] == DOWN) {
         snake.body[0].y += config.squareSize;
     } 
-    else if (snake.direction == 3) {
+    else if (snake.direction[0] == LEFT) {
         snake.body[0].x -= config.squareSize;
     }
 }
@@ -525,16 +605,16 @@ void processSnakeMovement(snake_t& snake, config_t& config, time_variables_t& ti
         int stepX = 0;
         int stepY = 0;
 
-        if (snake.direction == 0) {
+        if (snake.direction[0] == 0) {
             stepY -= config.squareSize;
         }
-        else if (snake.direction == 1) {
+        else if (snake.direction[0] == 1) {
             stepX += config.squareSize;
         }
-        else if (snake.direction == 2) {
+        else if (snake.direction[0] == 2) {
             stepY += config.squareSize;
         }
-        else if (snake.direction == 3) {
+        else if (snake.direction[0] == 3) {
             stepX -= config.squareSize;
         }
 
@@ -570,16 +650,16 @@ void handleGameRunningInput(graphics_t graphics,int& quit, snake_t& snake,time_v
                     else if(graphics.event.key.keysym.sym == SDLK_s) saveGameState(snake, redDot,timeVars,blueDotPos, config);
                     else if(graphics.event.key.keysym.sym == SDLK_i) loadGameState(snake, redDot,timeVars,blueDotPos, config);
                     else if(graphics.event.key.keysym.sym == SDLK_UP){
-						snake.direction = 0;
+						snake.direction[0] = UP;
 					} 
                     else if(graphics.event.key.keysym.sym == SDLK_RIGHT){
-						snake.direction = 1;
+						snake.direction[0] = RIGHT;
 					} 
                     else if(graphics.event.key.keysym.sym == SDLK_DOWN){
-						snake.direction = 2;
+						snake.direction[0] = DOWN;
 					} 
                     else if(graphics.event.key.keysym.sym == SDLK_LEFT){
-						snake.direction = 3;
+						snake.direction[0] = LEFT;
 					}
                     break;
                 case SDL_QUIT:
@@ -607,10 +687,16 @@ void drawBottomStats (config_t config, colors_t colors, graphics_t graphics,char
 }
 
 void drawGameElements (config_t config, colors_t colors, graphics_t graphics, snake_t snake, red_dot_t redDot,position_t blueDotPos, double worldTime, char* text) {
-    DrawSurface(graphics, graphics.eti, snake.body[0].x, snake.body[0].y);
-    for (int i = 1; i <snake.length; i++) {
-        DrawSurface(graphics, graphics.ite, snake.body[i].x, snake.body[i].y);
+    DrawSnakePart(graphics, snake.body[0].x, snake.body[0].y, SNAKE_HEAD, config, snake.direction[0]);
+
+    for (int i = 1; i <snake.length-1; i+=2) {
+        DrawSnakePart(graphics, snake.body[i].x, snake.body[i].y, SNAKE_BODY_SMALL, config, snake.direction[i]);
     }
+    for (int i = 2; i <snake.length-1; i+=2) {
+        DrawSnakePart(graphics, snake.body[i].x, snake.body[i].y, SNAKE_BODY_BIG, config, snake.direction[i]);
+    }
+
+    DrawSnakePart(graphics, snake.body[snake.length-1].x, snake.body[snake.length-1].y, SNAKE_TAIL, config, snake.direction[snake.length-1]);
 
     DrawSurface(graphics, graphics.blue_dot, blueDotPos.x, blueDotPos.y);
 
@@ -655,7 +741,7 @@ void saveGameState(snake_t snake, red_dot_t redDot,time_variables_t timeVars,pos
     }
 
     fprintf(file, "%d\n", snake.length);
-    fprintf(file, "%d\n", snake.direction);
+    fprintf(file, "%d\n", snake.direction[0]);
     fprintf(file, "%lf\n", snake.speed);
     fprintf(file, "%d\n", snake.score);
     for (int i = 0; i < snake.length; i++) {
@@ -683,7 +769,7 @@ int loadGameFromFile(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVa
     }
     ResetGame(timeVars, snake, blueDotPos,redDot, config);
     if (fscanf(file, "%d", &snake.length) != 1) return 0;
-    if (fscanf(file, "%d", &snake.direction) != 1) return 0;
+    if (fscanf(file, "%d", &snake.direction[0]) != 1) return 0;
     if (fscanf(file, "%lf", &snake.speed) != 1) return 0;
     if (fscanf(file, "%d", &snake.score) != 1) return 0;
     for (int i = 0; i < snake.length; i++) {
@@ -934,28 +1020,20 @@ void handleGraphicsSetup (graphics_t& graphics, config_t config){
     graphics.scrtex = SDL_CreateTexture(graphics.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, config.screenWidth, config.screenHeight);
 
     SDL_ShowCursor(SDL_DISABLE);
-    graphics.charset = SDL_LoadBMP("./cs8x8.bmp");
-    // if(graphics.charset == NULL) {
-    //     printf("SDL_LoadBMP(cs8x8.bmp) error: %s\n", SDL_GetError());
-    //     SDL_FreeSurface(graphics.screen);
-    //     SDL_DestroyTexture(graphics.scrtex);
-    //     SDL_DestroyWindow(graphics.window);
-    //     SDL_DestroyRenderer(graphics.renderer);
-    //     SDL_Quit();
-    //     return 1;
-    // }
-    SDL_SetColorKey(graphics.charset, true, 0x000000);
+    graphics.cr = SDL_LoadBMP("./cs8x8b.bmp");
+    if (!graphics.cr) {
+        printf("SDL_LoadBMP(cs8x8a.bmp) error: %s\n", SDL_GetError());
+        exit(1);
+    }
 
-    graphics.eti = SDL_CreateRGBSurface(0, config.squareSize, config.squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
-	graphics.ite = SDL_CreateRGBSurface(0, config.squareSize, config.squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    SDL_SetColorKey(graphics.cr, true, 0x000000);
+    graphics.charset = SDL_CreateTextureFromSurface(graphics.renderer, graphics.cr);
+
 	graphics.blue_dot = SDL_CreateRGBSurface(0,config.squareSize, config.squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     graphics.red_dot = SDL_CreateRGBSurface(0, config.squareSize, config.squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
-    SDL_FillRect(graphics.eti, NULL, SDL_MapRGB(graphics.eti->format, 255, 255, 0)); 
-	SDL_FillRect(graphics.ite, NULL, SDL_MapRGB(graphics.ite->format, 0, 255, 0)); 
 	drawCircle(  graphics.blue_dot, config.squareSize / 2,config.squareSize / 2,config.squareSize / 3, SDL_MapRGB( graphics.blue_dot->format, 0, 0, 255));
     drawCircle(  graphics.red_dot, config.squareSize / 2, config.squareSize / 2, config.squareSize / 3, SDL_MapRGB(graphics.red_dot->format, 255, 0, 0));
-	SDL_Texture* blueTex = SDL_CreateTextureFromSurface(graphics.renderer, graphics.blue_dot);
-    SDL_Texture* redTex = SDL_CreateTextureFromSurface(graphics.renderer,  graphics.red_dot);
+	
 }
 
 // void updateFPS(time_variables_t& timeVars) {
@@ -975,16 +1053,16 @@ int main(int argc, char **argv) {
     srand(time(NULL));
     
     config_t config= {
-        .squareSize = 20,
-        .screenWidth = 31 * 20,
-        .screenHeight = 31 * 20,
-        .margin = 4 * 20,
-        .width = (31 * 20) - (2 * (4 * 20)),
-        .height = (31 * 20) - (2 * (4 * 20)),
-        .statsHeight = 3 * 20,
-        .y = (31 * 20) - (3 * 20) - 4,
+        .squareSize = 16,
+        .screenWidth = 41 * 16,
+        .screenHeight = 41 * 16,
+        .margin = 5 * 16,
+        .width = (41 * 16) - (2 * (4 * 16)),
+        .height = (41 *16) - (2 * (4 * 16)),
+        .statsHeight = 3 * 16,
+        .y = (41 * 16) - (3 * 16) - 4,
         .x = 16,
-        .statsWidth = (31 * 20) - 8,
+        .statsWidth = (41 * 16) - 8,
         .speedFix = 100,
         .maxSnakeLength = 20,
         .minSnakeLength = 3,
@@ -995,7 +1073,7 @@ int main(int argc, char **argv) {
         .displayDuration = 10.0f,
         .shortenLength = 1,
         .slowdownFactor = 0.3f,
-        .progressBarWidth = 20,
+        .progressBarWidth = 16,
         .progressBarHeight = 100,
         .redDotBonus = 150,
         .blueDotBonus = 100,
@@ -1023,7 +1101,7 @@ int main(int argc, char **argv) {
     };
     
     snake_t snake = {
-        .direction = 1,
+        .direction[0] = RIGHT,
         .length = config.defaultSnakeLength,
         .speed = config.defaultSnakeSpeed,
     };
@@ -1055,17 +1133,6 @@ int main(int argc, char **argv) {
         return 1;
     }
     handleGraphicsSetup(graphics, config);
-
-    // if(eti == NULL) {
-    //     printf("SDL_LoadBMP(eti.bmp) error: %s\n", SDL_GetError());
-    //     SDL_FreeSurface(graphics.charset);
-    //     SDL_FreeSurface(graphics.screen);
-    //     SDL_DestroyTexture(graphics.scrtex);
-    //     SDL_DestroyWindow(graphics.window);
-    //     SDL_DestroyRenderer(graphics.renderer);
-    //     SDL_Quit();
-    //     return 1;
-    // }
 
     char text[256];
     colors_t colors = {
@@ -1116,7 +1183,7 @@ int main(int argc, char **argv) {
         timeVars.frames++;
     }
 
-    SDL_FreeSurface(graphics.charset);
+    SDL_FreeSurface(graphics.cr);
     SDL_FreeSurface(graphics.screen);
     SDL_DestroyTexture(graphics.scrtex);
     SDL_DestroyRenderer(graphics.renderer);
