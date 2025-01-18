@@ -10,6 +10,11 @@ extern "C" {
 }
 
 typedef struct {
+    int x;
+    int y;
+} position_t;
+
+typedef struct {
     int squareSize;
     int screenWidth;
     int screenHeight;
@@ -17,8 +22,7 @@ typedef struct {
     int width;
     int height;
     int statsHeight;
-    int y;
-    int x;
+    position_t statsBottom;
     int statsWidth;
     int speedFix;
     int maxSnakeLength;
@@ -39,16 +43,15 @@ typedef struct {
     char saveFilename[128];
     char scoreFilename[128];
     int lineHeight;
-    int maxEntries;
     int buffersize;
     int scoreboardAmount;
+    int textMargin;
 } config_t;
 
 typedef enum {
     GAME_RUNNING,
     GAME_OVER,
-    SCOREBOARD,
-    WELCOME_SCREEN,
+    ADD_SCORE,
 } game_state_t;
 
 typedef enum {
@@ -66,25 +69,20 @@ typedef enum {
 } directions_t;
 
 typedef struct {
-    int x;
-    int y;
-} position_t;
-
-typedef struct {
     position_t body[100];
     int length;
-    directions_t direction[20];
+    directions_t direction[100];
     double speed;
     int score;
-    char playerName[20];
+    char playerName[128];
 } snake_t;
 
 typedef struct {
     position_t position;
     float spawnTime;
     float displayDuration;
+    int displayMode;
     int isActive;
-    SDL_Surface* red_dot;
 } red_dot_t;
 
 typedef struct {
@@ -92,6 +90,7 @@ typedef struct {
     int green;
     int red;
     int blue;
+    int white;
 } colors_t;
 
 typedef struct {
@@ -99,15 +98,13 @@ typedef struct {
     float delta;
     double nextIncrease;
     double worldTime;
-    double fps;
-    double fpsTimer;
     int frames;
     double t1;
     double t2;
 } time_variables_t;
 
 typedef struct {
-    char name[20];
+    char name[128];
     int score;
 } score_entry_t;
 
@@ -116,14 +113,17 @@ typedef struct{
     SDL_Surface *screen;
     SDL_Texture *charset;
     SDL_Rect srcRect;
-    SDL_Rect dstRect;
-	SDL_Surface *blue_dot;
-    SDL_Surface *red_dot;
     SDL_Texture *scrtex;
     SDL_Window  *window;
     SDL_Renderer *renderer;
     SDL_Surface *cr;
 } graphics_t;
+
+typedef enum {
+    JUSTIFY_LEFT,
+    JUSTIFY_RIGHT,
+    JUSTIFY_CENTER,
+} justify_t;
 
 void randomizePosition(position_t &pos, snake_t& snake, config_t config, red_dot_t redDot);
 void spawnRedDot(red_dot_t& redDot, snake_t& snake, float worldTime, position_t blueDotPos, config_t config);
@@ -133,7 +133,7 @@ void loadGameState(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVars
 void updateScoreboard(snake_t snake, config_t config);
 void drawTopStats(config_t config, colors_t colors, graphics_t graphics,time_variables_t timeVars, char* text, snake_t snake);
 
-void DrawSpriteScaled(graphics_t graphics, int destX, int destY, int spriteX, int spriteY, int scale, config_t config) {
+void DrawSpriteScaled(graphics_t graphics, int destX, int destY, int spriteX, int spriteY, int scale, config_t config, int color) {
     SDL_Rect srcRect = {
         .x = spriteX * 8,
         .y = spriteY * 8,
@@ -144,11 +144,16 @@ void DrawSpriteScaled(graphics_t graphics, int destX, int destY, int spriteX, in
     SDL_Rect destRect = {
         .x = destX - config.squareSize/2,
         .y = destY - config.squareSize/2,
-        .w = 8 * scale,
-        .h = 8 * scale
+        .w = 4 * scale,
+        .h = 4 * scale
     };
 
     SDL_Surface* temp = SDL_CreateRGBSurface(0, destRect.w, destRect.h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+
+    Uint8 r, g, b;
+    SDL_GetRGB(color, graphics.screen->format, &r, &g, &b);
+    SDL_SetSurfaceColorMod(graphics.cr, r, g, b);
+
     SDL_Rect scaledRect = {
         .x = 0,
         .y = 0,
@@ -159,10 +164,74 @@ void DrawSpriteScaled(graphics_t graphics, int destX, int destY, int spriteX, in
     int result = SDL_BlitScaled(graphics.cr, &srcRect, temp, &scaledRect);
     result = SDL_BlitSurface(temp, NULL, graphics.screen, &destRect);
     SDL_FreeSurface(temp);
+    SDL_SetSurfaceColorMod(graphics.cr, 255, 255, 255);
 }
 
+int readScoreboard(config_t config, score_entry_t* entries) {
+    FILE* file = fopen(config.scoreFilename, "r");
+    if (!file) {
+        perror("Failed to open file");
+        return 0;
+    }
 
-void DrawSnakePart(graphics_t graphics, int x, int y, snake_part_t type, config_t config, directions_t direction) {
+    int count = 0;
+    while (count < config.scoreboardAmount && fscanf(file, "%49s %d", entries[count].name, &entries[count].score) == 2) {
+        count++;
+    }
+
+    fclose(file);
+    return count;
+}
+
+void updateScoreboard(snake_t snake, const config_t config) {
+    score_entry_t entries[config.scoreboardAmount];
+    int count = readScoreboard(config, entries);
+    int found = 0;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(entries[i].name, snake.playerName) == 0) {
+            entries[i].score = snake.score;
+            found = 1;
+            break;
+        }
+    }
+    if (!found) {
+        if (count < config.scoreboardAmount) {
+            strncpy(entries[count].name, snake.playerName, config.buffersize - 1);
+            entries[count].name[config.buffersize - 1] = '\0';
+            entries[count].score = snake.score;
+            count++;
+        } else {
+            int lowestIndex = 0;
+            for (int i = 1; i < count; i++) {
+                if (entries[i].score < entries[lowestIndex].score) {
+                    lowestIndex = i;
+                }
+            }
+            if (snake.score > entries[lowestIndex].score) {
+                strncpy(entries[lowestIndex].name, snake.playerName, config.buffersize - 1);
+                entries[lowestIndex].name[config.buffersize - 1] = '\0';
+                entries[lowestIndex].score = snake.score;
+            }
+        }
+    }
+
+
+
+     FILE* file = fopen(config.scoreFilename, "w");
+    if (!file) {
+        perror("Failed to open file");
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        fprintf(file, "%s %d\n", entries[i].name, entries[i].score);
+    }
+
+    fclose(file);
+    // snake.playerName[0]='\0';
+}
+
+void DrawSnakePart(graphics_t graphics, int x, int y, snake_part_t type, config_t config, directions_t direction, colors_t colors) {
     int spriteY = 9;
     
     switch (direction) {
@@ -182,42 +251,49 @@ void DrawSnakePart(graphics_t graphics, int x, int y, snake_part_t type, config_
 
     switch(type) {
         case SNAKE_HEAD:
-            DrawSpriteScaled(graphics, x, y, 0, spriteY, 2, config);
+            DrawSpriteScaled(graphics, x, y, 0, spriteY, 4, config, colors.green);
             break;
         case SNAKE_BODY_SMALL:
-            DrawSpriteScaled(graphics, x, y, 2, spriteY, 2, config);
+            DrawSpriteScaled(graphics, x, y, 2, spriteY, 4, config, colors.green);
             break;
         case SNAKE_BODY_BIG:
-            DrawSpriteScaled(graphics, x, y, 1, spriteY, 2, config);
+            DrawSpriteScaled(graphics, x, y, 1, spriteY, 4, config, colors.green);
             break;
         case SNAKE_TAIL:
-            DrawSpriteScaled(graphics, x, y, 3, spriteY, 2, config);
+            DrawSpriteScaled(graphics, x, y, 3, spriteY, 4, config, colors.green);
             break;
     }
 }
 
+void DrawString(graphics_t graphics, int x, int y, const char *text, int maxWidth, justify_t justify) {
+    int px, py, c;
+    SDL_Rect s, d;
+    s.w = 8;
+    s.h = 8;
+    d.w = 8;
+    d.h = 8;
 
+    int textWidth = strlen(text) * 8;
 
-void DrawString(graphics_t graphics, int x, int y, const char *text) {
-	int px, py, c;
-	SDL_Rect s, d;
-	s.w = 8;
-	s.h = 8;
-	d.w = 8;
-	d.h = 8;
-	while(*text) {
-		c = *text & 255;
-		px = (c % 16) * 8;
-		py = (c / 16) * 8;
-		s.x = px;
-		s.y = py;
-		d.x = x;
-		d.y = y;
-		SDL_BlitSurface(graphics.cr, &s, graphics.screen, &d);
-		x += 8;
-		text++;
-	};
-};
+    if (justify == JUSTIFY_RIGHT) {
+        x = x + maxWidth - textWidth;
+    } else if (justify == JUSTIFY_CENTER) {
+        x = x + (maxWidth - textWidth) / 2;
+    }
+
+    while (*text) {
+        c = *text & 255;
+        px = (c % 16) * 8;
+        py = (c / 16) * 8;
+        s.x = px;
+        s.y = py;
+        d.x = x;
+        d.y = y;
+        SDL_BlitSurface(graphics.cr, &s, graphics.screen, &d);
+        x += 8;
+        text++;
+    }
+}
 
 void DrawSurface(graphics_t graphics, SDL_Surface *sprite, int x, int y) {
 	SDL_Rect dest;
@@ -343,7 +419,7 @@ void drawGrid(graphics_t graphics, Uint32 color, config_t config) {
     }
 }
 
-void UpdateSnake(snake_t &snake, config_t config) {
+void UpdateSnake(snake_t &snake, config_t config, red_dot_t& redDot) {
     for (int i = snake.length - 1; i > 0; --i) {
         snake.body[i] = snake.body[i - 1];
         snake.direction[i] = snake.direction[i-1];
@@ -361,6 +437,7 @@ void UpdateSnake(snake_t &snake, config_t config) {
     else if (snake.direction[0] == LEFT) {
         snake.body[0].x -= config.squareSize;
     }
+    redDot.displayMode = (redDot.displayMode + 1)%4;
 }
 
 int checkSnakeCollision(snake_t* snake, int nextX, int nextY) {
@@ -401,8 +478,33 @@ void checkBlueDot(snake_t& snake, int nextX, int nextY, position_t &blue_dot_pos
 		randomizePosition(blue_dot_pos, snake, config, redDot);
 	}
 }
+int isScoreGoodEnough(int score, config_t config) {
+    score_entry_t entries[config.scoreboardAmount];
+    int count = readScoreboard(config, entries);
 
-void drawGameOver(graphics_t graphics, int score, game_state_t* gameState, config_t config, colors_t colors, snake_t snake) {
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
+            if (entries[j].score > entries[i].score) {
+                score_entry_t temp = entries[i];
+                entries[i] = entries[j];
+                entries[j] = temp;
+            }
+        }
+    }
+
+    if (count < config.scoreboardAmount) {
+        return 1;
+    }
+
+    if (score > entries[count - 1].score) {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+void drawGameOver(graphics_t graphics, int score, config_t config, colors_t colors, snake_t snake) {
     int windowWidth = config.screenWidth / 2;
     int windowHeight = config.screenHeight/ 2;
     int windowX = (config.screenWidth - windowWidth) / 2;
@@ -415,34 +517,49 @@ void drawGameOver(graphics_t graphics, int score, game_state_t* gameState, confi
     DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight, 
                  colors.red, colors.black);
     
-    char text[128];
+    char text[config.buffersize];
     snprintf(text, sizeof(text), "GAME OVER!");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + config.lineHeight, text);
-    
-    snprintf(text, sizeof(text), "player: %s", snake.playerName);
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + 2*config.lineHeight, text);
+    DrawString(graphics, windowX , 
+              windowY + config.lineHeight, text, config.screenWidth/2, JUSTIFY_CENTER);
 
-    snprintf(text, sizeof(text), "Final Score: %d", score);
+    snprintf(text, sizeof(text), "Final Score: %d, player %s", score, snake.playerName);
+    DrawString(graphics, windowX , 
+              windowY + 2*config.lineHeight, text, config.screenWidth/2, JUSTIFY_CENTER);
+
+    snprintf(text, sizeof(text), "SCOREBOARD");
     DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + 3*config.lineHeight, text);
-    
+               windowY + 3*config.lineHeight, text, config.screenWidth/2, JUSTIFY_LEFT);
+
+    score_entry_t entries[config.scoreboardAmount];
+    int count = readScoreboard(config, entries);
+
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
+            if (entries[j].score > entries[i].score) {
+                score_entry_t temp = entries[i];
+                entries[i] = entries[j];
+                entries[j] = temp;
+            }
+        }
+    }
+
+    for (int i = 0; i < count && i < config.scoreboardAmount; i++) {
+        snprintf(text, sizeof(text), "%d. %s - %d", i + 1, entries[i].name, entries[i].score);
+        DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
+                   windowY + config.lineHeight * (i + 5), text, config.screenWidth/2, JUSTIFY_LEFT);
+    }
+ 
     snprintf(text, sizeof(text), "Press N for New Game");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + 4*config.lineHeight, text);
+    DrawString(graphics, windowX , 
+              windowY + 12*config.lineHeight, text, config.screenWidth/2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "Press I to load the last save");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + 5*config.lineHeight, text);
+    DrawString(graphics, windowX , 
+              windowY + 13*config.lineHeight, text, config.screenWidth/2, JUSTIFY_CENTER);
 
-    snprintf(text, sizeof(text), "Press B to see the scoreboard!");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + 6*config.lineHeight, text);
-    
     snprintf(text, sizeof(text), "Press ESC to Quit");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-              windowY + 7*config.lineHeight, text);
+    DrawString(graphics, windowX , 
+              windowY + 15*config.lineHeight, text, config.screenWidth/2, JUSTIFY_CENTER);
 }
 
 void handleGameOverInput(graphics_t graphics, int& quit, game_state_t& gameState, snake_t& snake,  time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, config_t config) {
@@ -456,16 +573,16 @@ void handleGameOverInput(graphics_t graphics, int& quit, game_state_t& gameState
                     ResetGame(timeVars, snake, blueDotPos, redDot, config);
                     gameState = GAME_RUNNING;
                 }
-                else if(graphics.event.key.keysym.sym == SDLK_b) {
-                    gameState = SCOREBOARD;
-                }
+                // else if(graphics.event.key.keysym.sym == SDLK_b) {
+                //     gameState = SCOREBOARD;
+                // }
                 else if(graphics.event.key.keysym.sym == SDLK_i) {
                     loadGameState(snake, redDot,timeVars,blueDotPos, config);
                     gameState = GAME_RUNNING;
                 }
                 break;
             case SDL_QUIT:
-                updateScoreboard(snake, config);
+                // updateScoreboard(snake, config);
                 quit = 1;
                 break;
         }
@@ -538,7 +655,7 @@ void checkRedDot(snake_t& snake, red_dot_t& redDot, config_t config) {
     }
 }
 
-void drawProgressBar(graphics_t graphics, red_dot_t* redDot, float worldTime, colors_t colors, config_t config) { // bad progress bar height
+void drawProgressBar(graphics_t graphics, red_dot_t* redDot, float worldTime, colors_t colors, config_t config) { // might be a bad progress bar height
     if (!redDot->isActive) return;
 
     float timeElapsed = worldTime - redDot->spawnTime;
@@ -570,7 +687,7 @@ void drawProgressBar(graphics_t graphics, red_dot_t* redDot, float worldTime, co
     char timeText[32];
     snprintf(timeText, sizeof(timeText), "%.1fs", remainingTime);
 
-    DrawString(graphics, borderRect.x, borderRect.y + config.progressBarHeight + 10, timeText);
+    DrawString(graphics, borderRect.x, borderRect.y + config.progressBarHeight + 10, timeText, config.progressBarWidth, JUSTIFY_CENTER);
 }
 
 void updateBonusSystem(snake_t&snake, red_dot_t& redDot, float worldTime, position_t blueDotPos, config_t config) {
@@ -627,15 +744,20 @@ void processSnakeMovement(snake_t& snake, config_t& config, time_variables_t& ti
         }
 
         if (checkSnakeCollision(&snake, nextX, nextY)) {
-            gameState = GAME_OVER;
-            updateScoreboard(snake, config);
+            if(isScoreGoodEnough(snake.score, config)){
+                gameState = ADD_SCORE;
+            }
+            else{
+                gameState = GAME_OVER;
+            }
+            // updateScoreboard(snake, config); //this is the spot
             return;
         }
 
         checkBlueDot(snake, nextX, nextY, blueDotPos, config, redDot);
         updateBonusSystem(snake, redDot, timeVars.worldTime, blueDotPos, config);
 
-        UpdateSnake(snake, config);
+        UpdateSnake(snake, config, redDot);
 
         timeVars.timeAccumulator -= (config.squareSize / (snake.speed * config.speedFix));
     }
@@ -663,7 +785,7 @@ void handleGameRunningInput(graphics_t graphics,int& quit, snake_t& snake,time_v
 					}
                     break;
                 case SDL_QUIT:
-                    updateScoreboard(snake, config);
+                    // updateScoreboard(snake, config);
                     quit = 1;
                     break;
             };
@@ -677,45 +799,45 @@ void renderScren (graphics_t graphics){
 }
 
 void drawBottomStats (config_t config, colors_t colors, graphics_t graphics,char* text) {
-    DrawRectangle(graphics, config.x/4, config.y, config.statsWidth, config.statsHeight, colors.green, colors.black);
-    snprintf(text,config.screenWidth, "wymagania: 1, 2, 3, 4, A, B, C, D, E, F");
-    DrawString(graphics, 2*config.x,config.screenHeight-config.statsHeight, text);
-    snprintf(text, config.screenWidth, "ESC - wyjdz, N - nowa gra");
-    DrawString(graphics,config.screenWidth/2 + 2*config.x,config.screenHeight-config.statsHeight, text);
-    snprintf(text, config.screenWidth, "S - zapisz, I - zaladuj zapisana");
-    DrawString(graphics,config.screenWidth/2 + 2*config.x,config.screenHeight-config.statsHeight/2, text);
+    DrawRectangle(graphics, config.textMargin, config.statsBottom.y,config.statsBottom.x, config.statsHeight, colors.green, colors.black);
+    snprintf(text,config.screenWidth, "requirments:");
+    DrawString(graphics, 2*config.textMargin, config.statsBottom.y + config.lineHeight, text, config.screenWidth/2, JUSTIFY_LEFT);
+    snprintf(text,config.screenWidth, "1, 2, 3, 4, A, B, C, D, E, F, G");
+    DrawString(graphics, 2*config.textMargin,config.statsBottom.y+2*config.lineHeight, text, config.screenWidth/2, JUSTIFY_LEFT);
+    snprintf(text, config.screenWidth, "ESC - quit, N - new game");
+    DrawString(graphics, config.screenWidth/2 - 2*config.textMargin, config.statsBottom.y + config.lineHeight, text, config.screenWidth/2, JUSTIFY_RIGHT);
+    snprintf(text, config.screenWidth, "S - save, I - load last save");
+    DrawString(graphics, config.screenWidth/2 - 2*config.textMargin,config.statsBottom.y+2*config.lineHeight, text, config.screenWidth/2, JUSTIFY_RIGHT);
 }
 
-void drawGameElements (config_t config, colors_t colors, graphics_t graphics, snake_t snake, red_dot_t redDot,position_t blueDotPos, double worldTime, char* text) {
-    DrawSnakePart(graphics, snake.body[0].x, snake.body[0].y, SNAKE_HEAD, config, snake.direction[0]);
-
-    for (int i = 1; i <snake.length-1; i+=2) {
-        DrawSnakePart(graphics, snake.body[i].x, snake.body[i].y, SNAKE_BODY_SMALL, config, snake.direction[i]);
-    }
-    for (int i = 2; i <snake.length-1; i+=2) {
-        DrawSnakePart(graphics, snake.body[i].x, snake.body[i].y, SNAKE_BODY_BIG, config, snake.direction[i]);
+void drawGameElements (config_t config, colors_t colors, graphics_t graphics, snake_t snake, red_dot_t& redDot,position_t blueDotPos, double worldTime) {
+    DrawSnakePart(graphics, snake.body[0].x, snake.body[0].y, SNAKE_HEAD, config, snake.direction[0], colors);
+    for (int i = 1; i < snake.length - 1; i++) {
+        snake_part_t partType = (i % 2 == (redDot.displayMode%2)) ? SNAKE_BODY_SMALL : SNAKE_BODY_BIG;
+        DrawSnakePart(graphics, snake.body[i].x, snake.body[i].y, partType, config, snake.direction[i], colors);
     }
 
-    DrawSnakePart(graphics, snake.body[snake.length-1].x, snake.body[snake.length-1].y, SNAKE_TAIL, config, snake.direction[snake.length-1]);
+    DrawSnakePart(graphics, snake.body[snake.length-1].x, snake.body[snake.length-1].y, SNAKE_TAIL, config, snake.direction[snake.length-1], colors);
 
-    DrawSurface(graphics, graphics.blue_dot, blueDotPos.x, blueDotPos.y);
-
+    DrawSpriteScaled(graphics, blueDotPos.x, blueDotPos.y,  5, 8 + redDot.displayMode%4, 4, config, colors.blue);
     if(redDot.isActive == 1){
-        DrawSurface(graphics, graphics.red_dot, redDot.position.x, redDot.position.y);
+        SDL_SetSurfaceColorMod(graphics.cr, 255, 0, 0);
+        DrawSpriteScaled(graphics, redDot.position.x, redDot.position.y,  5, 8 + redDot.displayMode%4, 4, config, colors.red);
+        SDL_SetSurfaceColorMod(graphics.cr, 255, 255, 255);
         drawProgressBar(graphics, &redDot,worldTime,colors, config);
     }
 }
 
 void drawTopStats(config_t config, colors_t colors, graphics_t graphics, time_variables_t timeVars, char* text, snake_t snake) {
-    DrawRectangle(graphics, 4, 4, config.screenWidth-8, 60, colors.green, colors.black);
-    snprintf(text, config.screenWidth, "czas trwania = %.1lf s  %.0lf klatek / s", timeVars.worldTime, timeVars.fps);
-    DrawString(graphics,16 , 20, text);
-    snprintf(text, config.screenWidth, "wynik: %d, predkosc: %f", snake.score, snake.speed);
-    DrawString(graphics, 16, 40, text);
-    snprintf(text, config.screenWidth, "gracz: %s", snake.playerName);
-    DrawString(graphics,2*config.screenWidth/3, 20, text);
-    snprintf(text, config.screenWidth, "dlugoscs: %d", snake.length);
-    DrawString(graphics,2*config.screenWidth/3, 40, text);
+    DrawRectangle(graphics, config.textMargin,config.textMargin, config.statsBottom.x, config.statsHeight, colors.green, colors.black);
+    snprintf(text, config.screenWidth/3, "time = %.1lf s ", timeVars.worldTime);
+    DrawString(graphics,2*config.textMargin, config.lineHeight, text, config.screenWidth/2, JUSTIFY_LEFT);
+    snprintf(text, config.screenWidth/3, "score: %d", snake.score);
+    DrawString(graphics, 2*config.textMargin, config.lineHeight*2, text, config.screenWidth/2, JUSTIFY_LEFT);
+    snprintf(text, config.screenWidth/3, "length: %d", snake.length);
+    DrawString(graphics,config.screenWidth/2 - 2*config.textMargin, config.lineHeight, text, config.screenWidth/2, JUSTIFY_RIGHT);
+    snprintf(text, config.screenWidth/3, "speed: %.1f", snake.speed);
+    DrawString(graphics,config.screenWidth/2 - 2*config.textMargin, config.lineHeight*2, text, config.screenWidth/2, JUSTIFY_RIGHT);
 }
 
 void handleTimeIncrease(time_variables_t& timeVars, snake_t& snake, config_t config) {
@@ -813,7 +935,7 @@ void loadGameState(snake_t& snake, red_dot_t& redDot, time_variables_t& timeVars
     }
 }
 
-void drawWelcome(graphics_t graphics, config_t config, colors_t colors,char* buffer) {
+void drawAddScore(graphics_t graphics, config_t config, colors_t colors,char* buffer, snake_t snake) {
     int windowWidth = config.screenWidth / 2;
     int windowHeight = config.screenHeight / 3;
     int windowX = (config.screenWidth - windowWidth) / 2;
@@ -826,28 +948,34 @@ void drawWelcome(graphics_t graphics, config_t config, colors_t colors,char* buf
     DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight,colors.red, colors.black);
 
     char text[128];
-    snprintf(text, sizeof(text), "Welcome to the Game!");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + config.lineHeight, text);
+    snprintf(text, sizeof(text), "WOW! THAT'S A GREAT SCORE %s!", snake.playerName);
+    DrawString(graphics, windowX , 
+               windowY + config.lineHeight, text, config.screenWidth/2, JUSTIFY_CENTER);
 
-    snprintf(text, sizeof(text), "Enter your name:");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + config.lineHeight*2, text);
+    snprintf(text, sizeof(text), "Enter your name to add it to scoreboard:");
+    DrawString(graphics, windowX , 
+               windowY + config.lineHeight*2, text, config.screenWidth/2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "%s", buffer);
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + config.lineHeight*3, text);
+    DrawString(graphics, windowX , 
+               windowY + config.lineHeight*4, text, config.screenWidth/2, JUSTIFY_CENTER);
 
-    snprintf(text, sizeof(text), "Press Enter to Start");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + config.lineHeight*4, text);
+    DrawLine(graphics, windowWidth - windowWidth/4, windowY + config.lineHeight*5, windowWidth/2, 1, 0, colors.blue);
 
+
+    snprintf(text, sizeof(text), "Press Enter to start typing");
+    DrawString(graphics, windowX , 
+               windowY + config.lineHeight*8, text, config.screenWidth/2, JUSTIFY_CENTER);
+
+    snprintf(text, sizeof(text), "Press N to start a new game");
+    DrawString(graphics, windowX , 
+               windowY + config.lineHeight*9, text, config.screenWidth/2, JUSTIFY_CENTER);
     snprintf(text, sizeof(text), "Press ESC to Quit");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + config.lineHeight*5, text);
+    DrawString(graphics, windowX , 
+               windowY + config.lineHeight*10, text, config.screenWidth/2, JUSTIFY_CENTER);
 }
 
-void handleWelcomeInput(graphics_t graphics, int& quit, game_state_t& gameState, snake_t& snake, time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, config_t config, char* buffer) {
+void handleAddScore(graphics_t graphics, int& quit, game_state_t& gameState, snake_t& snake, time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, config_t config, char* buffer) {
     static int isTyping = 0;          // potential change in future
     while (SDL_PollEvent(&graphics.event)) {
         switch (graphics.event.type) {
@@ -858,16 +986,19 @@ void handleWelcomeInput(graphics_t graphics, int& quit, game_state_t& gameState,
                 if (graphics.event.key.keysym.sym == SDLK_ESCAPE) {
                     quit = 1;
                 }
-                else if (graphics.event.key.keysym.sym == SDLK_b) {
-                    gameState = SCOREBOARD;
-                } 
+                // else if (graphics.event.key.keysym.sym == SDLK_n) {
+                //    ResetGame(timeVars, snake, blueDotPos, redDot, config);
+                //    gameState = GAME_RUNNING;
+                // } 
                 else if (graphics.event.key.keysym.sym == SDLK_RETURN) {
                     if (isTyping) {
                         strncpy(snake.playerName, buffer, config.buffersize - 1);
                         snake.playerName[config.buffersize - 1] = '\0';
                         isTyping = 0;
-                        ResetGame(timeVars, snake, blueDotPos, redDot, config);
-                        gameState = GAME_RUNNING;
+                        updateScoreboard(snake, config);
+                        buffer[0] = '\0';
+                        // ResetGame(timeVars, snake, blueDotPos, redDot, config);
+                        gameState = GAME_OVER;
                     } else {
                         isTyping = 1;
                         buffer[0] = '\0';
@@ -891,124 +1022,69 @@ void handleWelcomeInput(graphics_t graphics, int& quit, game_state_t& gameState,
     }
 }
 
-int readScoreboard(config_t config, score_entry_t* entries) {
-    FILE* file = fopen(config.scoreFilename, "r");
-    if (!file) {
-        perror("Failed to open file");
-        return 0;
-    }
+// void drawTopScores(graphics_t graphics, config_t config, colors_t colors) {
+//     int windowWidth = config.screenWidth / 2;
+//     int windowHeight = config.screenHeight / 2;
+//     int windowX = (config.screenWidth - windowWidth) / 2;
+//     int windowY = (config.screenHeight - windowHeight);
 
-    int count = 0;
-    while (count < config.maxEntries && fscanf(file, "%49s %d", entries[count].name, &entries[count].score) == 2) {
-        count++;
-    }
+//     DrawRectangle(graphics, 0, 0, config.screenWidth, config.screenHeight, 
+//                   SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00), 
+//                   SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00));
 
-    fclose(file);
-    return count;
-}
+//     DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight, colors.red, colors.black);
 
-void writeScoreboard(const char* filename, score_entry_t* entries, int count) {
-    FILE* file = fopen(filename, "w");
-    if (!file) {
-        perror("Failed to open file");
-        return;
-    }
+//     char text[config.buffersize];
+//     snprintf(text, sizeof(text), "SCOREBOARD");
+//     DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
+//                windowY + config.lineHeight, text, config.screenWidth/2, JUSTIFY_LEFT);
 
-    for (int i = 0; i < count; i++) {
-        fprintf(file, "%s %d\n", entries[i].name, entries[i].score);
-    }
+//     score_entry_t entries[config.maxEntries];
+//     int count = readScoreboard(config, entries);
 
-    fclose(file);
-}
+//     for (int i = 0; i < count - 1; i++) {
+//         for (int j = i + 1; j < count; j++) {
+//             if (entries[j].score > entries[i].score) {
+//                 score_entry_t temp = entries[i];
+//                 entries[i] = entries[j];
+//                 entries[j] = temp;
+//             }
+//         }
+//     }
 
-void updateScoreboard(snake_t snake, config_t config) {
-    score_entry_t entries[20];
-    int count = readScoreboard(config, entries);
+//     for (int i = 0; i < count && i < config.scoreboardAmount; i++) {
+//         snprintf(text, sizeof(text), "%d. %s - %d", i + 1, entries[i].name, entries[i].score);
+//         DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
+//                    windowY + config.lineHeight * (i + 2), text, config.screenWidth/2, JUSTIFY_LEFT);
+//     }
 
-    int found = 0;
-    for (int i = 0; i < count; i++) {
-        if (strcmp(entries[i].name, snake.playerName) == 0) {
-            if (snake.score > entries[i].score) {
-                entries[i].score = snake.score;
-            }
-            found = 1;
-            break;
-        }
-    }
+//     snprintf(text, sizeof(text), "Press ESC to quit");
+//     DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
+//                windowY + windowHeight - config.lineHeight * 2, text, config.screenWidth/2, JUSTIFY_LEFT);
+//     snprintf(text, sizeof(text), "Press n to start new game");
+//     DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
+//                windowY + windowHeight - config.lineHeight * 3, text, config.screenWidth/2, JUSTIFY_LEFT);
+// }
 
-    if (!found && count < config.maxEntries) {
-        strncpy(entries[count].name, snake.playerName, config.maxEntries - 1);
-        entries[count].name[config.maxEntries - 1] = '\0';
-        entries[count].score = snake.score;
-        count++;
-    }
-
-    writeScoreboard(config.scoreFilename, entries, count);
-}
-
-void drawTopScores(graphics_t graphics, config_t config, colors_t colors) {
-    int windowWidth = config.screenWidth / 2;
-    int windowHeight = config.screenHeight / 2;
-    int windowX = (config.screenWidth - windowWidth) / 2;
-    int windowY = (config.screenHeight - windowHeight) / 2;
-
-    DrawRectangle(graphics, 0, 0, config.screenWidth, config.screenHeight, 
-                  SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00), 
-                  SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00));
-
-    DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight, colors.red, colors.black);
-
-    char text[config.buffersize];
-    snprintf(text, sizeof(text), "SCOREBOARD");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + config.lineHeight, text);
-
-    score_entry_t entries[config.maxEntries];
-    int count = readScoreboard(config, entries);
-
-    for (int i = 0; i < count - 1; i++) {
-        for (int j = i + 1; j < count; j++) {
-            if (entries[j].score > entries[i].score) {
-                score_entry_t temp = entries[i];
-                entries[i] = entries[j];
-                entries[j] = temp;
-            }
-        }
-    }
-
-    for (int i = 0; i < count && i < config.scoreboardAmount; i++) {
-        snprintf(text, sizeof(text), "%d. %s - %d", i + 1, entries[i].name, entries[i].score);
-        DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-                   windowY + config.lineHeight * (i + 2), text);
-    }
-
-    snprintf(text, sizeof(text), "Press ESC to quit");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + windowHeight - config.lineHeight * 2, text);
-    snprintf(text, sizeof(text), "Press n to start new game");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-               windowY + windowHeight - config.lineHeight * 3, text);
-}
-
-void handleScoreboardInput(graphics_t graphics, int& quit, game_state_t& gameState, snake_t& snake,  time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, config_t config) {
-    while(SDL_PollEvent(&graphics.event)) {
-        switch(graphics.event.type) {
-            case SDL_KEYDOWN:
-                if(graphics.event.key.keysym.sym == SDLK_ESCAPE) {
-                    quit = 1;
-                }
-                else if(graphics.event.key.keysym.sym == SDLK_n) {
-                    ResetGame(timeVars, snake, blueDotPos, redDot, config);
-                    gameState = GAME_RUNNING;
-                }
-                break;
-            case SDL_QUIT:
-                updateScoreboard(snake, config);
-                quit = 1;
-                break;
-        }
-    }
-}
+// void handleScoreboardInput(graphics_t graphics, int& quit, game_state_t& gameState, snake_t& snake,  time_variables_t& timeVars, position_t& blueDotPos, red_dot_t& redDot, config_t config) {
+//     while(SDL_PollEvent(&graphics.event)) {
+//         switch(graphics.event.type) {
+//             case SDL_KEYDOWN:
+//                 if(graphics.event.key.keysym.sym == SDLK_ESCAPE) {
+//                     quit = 1;
+//                 }
+//                 else if(graphics.event.key.keysym.sym == SDLK_n) {
+//                     ResetGame(timeVars, snake, blueDotPos, redDot, config);
+//                     gameState = GAME_RUNNING;
+//                 }
+//                 break;
+//             case SDL_QUIT:
+//                 updateScoreboard(snake, config);
+//                 quit = 1;
+//                 break;
+//         }
+//     }
+// }
 
 void handleGraphicsSetup (graphics_t& graphics, config_t config){
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
@@ -1020,7 +1096,7 @@ void handleGraphicsSetup (graphics_t& graphics, config_t config){
     graphics.scrtex = SDL_CreateTexture(graphics.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, config.screenWidth, config.screenHeight);
 
     SDL_ShowCursor(SDL_DISABLE);
-    graphics.cr = SDL_LoadBMP("./cs8x8b.bmp");
+    graphics.cr = SDL_LoadBMP("./cs8x8c.bmp");
     if (!graphics.cr) {
         printf("SDL_LoadBMP(cs8x8a.bmp) error: %s\n", SDL_GetError());
         exit(1);
@@ -1028,41 +1104,17 @@ void handleGraphicsSetup (graphics_t& graphics, config_t config){
 
     SDL_SetColorKey(graphics.cr, true, 0x000000);
     graphics.charset = SDL_CreateTextureFromSurface(graphics.renderer, graphics.cr);
-
-	graphics.blue_dot = SDL_CreateRGBSurface(0,config.squareSize, config.squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
-    graphics.red_dot = SDL_CreateRGBSurface(0, config.squareSize, config.squareSize, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
-	drawCircle(  graphics.blue_dot, config.squareSize / 2,config.squareSize / 2,config.squareSize / 3, SDL_MapRGB( graphics.blue_dot->format, 0, 0, 255));
-    drawCircle(  graphics.red_dot, config.squareSize / 2, config.squareSize / 2, config.squareSize / 3, SDL_MapRGB(graphics.red_dot->format, 255, 0, 0));
-	
 }
-
-// void updateFPS(time_variables_t& timeVars) {
-//     timeVars.fpsTimer += timeVars.delta;
-//     if(timeVars.fpsTimer > 0.5) {
-//         timeVars.fps = timeVars.frames * 2;
-//         timeVars.frames = 0;
-//         timeVars.fpsTimer -= 0.5;
-//     }
-// }
 
 #ifdef __cplusplus
 extern "C"
 #endif
 
-int main(int argc, char **argv) {
+int main() {
     srand(time(NULL));
     
     config_t config= {
         .squareSize = 16,
-        .screenWidth = 41 * 16,
-        .screenHeight = 41 * 16,
-        .margin = 5 * 16,
-        .width = (41 * 16) - (2 * (4 * 16)),
-        .height = (41 *16) - (2 * (4 * 16)),
-        .statsHeight = 3 * 16,
-        .y = (41 * 16) - (3 * 16) - 4,
-        .x = 16,
-        .statsWidth = (41 * 16) - 8,
         .speedFix = 100,
         .maxSnakeLength = 20,
         .minSnakeLength = 3,
@@ -1082,20 +1134,29 @@ int main(int argc, char **argv) {
         .buffersize = 128,
         .saveFilename = "game_state.txt",
         .scoreFilename = "scoreboard.txt",
-        .lineHeight = 30,
-        .maxEntries = 20,
-        .scoreboardAmount = 5,
+        .lineHeight = 20,
+        .scoreboardAmount = 3,
+        .textMargin = 8,
     };
-	game_state_t gameState = WELCOME_SCREEN;
+
+        config.screenWidth = 45 * config.squareSize;
+        config.screenHeight = 45 * config.squareSize;
+        config.margin = 5 * config.squareSize;
+        config.width = config.screenWidth - (2 * config.margin);
+        config.height = config.screenHeight - (2 * config.margin);
+        config.statsHeight = 4 * config.squareSize;
+
+        config.statsBottom.x = config.screenWidth - 2*config.textMargin;
+        config.statsBottom.y = config.screenHeight - config.statsHeight;
+
+	game_state_t gameState = GAME_RUNNING;
     int quit, rc;
-    int stepX, stepY;
+    // int stepX, stepY;
     char buffer[128];
 
     time_variables_t timeVars = {
         .nextIncrease = config.speedUpAmount,
         .worldTime = 0,
-        .fpsTimer = 0,
-        .fps = 0,
         .t1 = 0,
         .t2 = 0,
     };
@@ -1110,15 +1171,13 @@ int main(int argc, char **argv) {
     red_dot_t redDot = {
         .isActive = 0,
         .displayDuration = 5,
+        .displayMode = 1,
     };    
 
 	position_t blueDotPos;
     graphics_t graphics;
    
     ResetGame(timeVars, snake, blueDotPos, redDot, config);
-
-    printf("wyjscie printfa trafia do tego okienka\n");
-    printf("printf output goes here\n");
 
     if(SDL_Init(SDL_INIT_EVERYTHING) != 0) {
         printf("SDL_Init error: %s\n", SDL_GetError());
@@ -1140,6 +1199,7 @@ int main(int argc, char **argv) {
         .green = SDL_MapRGB(graphics.screen->format, 0x00, 0xFF, 0x00),
         .red = SDL_MapRGB(graphics.screen->format, 0xFF, 0x00, 0x00),
         .blue = SDL_MapRGB(graphics.screen->format, 0x11, 0x11, 0xCC),
+        .white = SDL_MapRGB(graphics.screen->format, 0xFF, 0xFF, 0xFF),
     };
     
 
@@ -1152,11 +1212,10 @@ int main(int argc, char **argv) {
 		if (gameState == GAME_RUNNING) {
             handleTimeIncrease(timeVars,snake,config);
             processSnakeMovement(snake, config, timeVars, blueDotPos, redDot, gameState);
-            // updateFPS(timeVars);
             SDL_FillRect(graphics.screen, NULL, colors.black);
             DrawRectangle(graphics, config.margin, config.margin, config.width, config.height, colors.green, colors.black); 
             drawGrid(graphics, SDL_MapRGB(graphics.screen->format, 0x33, 0x33, 0x33), config);
-            drawGameElements(config,colors,graphics,snake,redDot,blueDotPos,timeVars.worldTime,text);
+            drawGameElements(config,colors,graphics,snake,redDot,blueDotPos,timeVars.worldTime);
             drawTopStats(config,colors,graphics,timeVars,text, snake);
             drawBottomStats(config,colors,graphics,text);
             renderScren(graphics);
@@ -1164,20 +1223,21 @@ int main(int argc, char **argv) {
 		}
 		else if (gameState == GAME_OVER) {
 			SDL_FillRect(graphics.screen, NULL, colors.black);
-			drawGameOver(graphics, snake.score, &gameState, config, colors, snake);
+			drawGameOver(graphics, snake.score, config, colors, snake);
+            // drawTopScores(graphics,config,colors);
 			renderScren(graphics);
 			handleGameOverInput(graphics, quit, gameState, snake, timeVars, blueDotPos, redDot, config);
 		}
-        else if (gameState == SCOREBOARD) {
+        // else if (gameState == SCOREBOARD) {
+		// 	SDL_FillRect(graphics.screen, NULL, colors.black);
+		// 	// drawTopScores(graphics, config, colors);
+		// 	renderScren(graphics);
+		// 	handleScoreboardInput(graphics, quit, gameState, snake, timeVars, blueDotPos, redDot, config);
+		// }
+        else if (gameState == ADD_SCORE) {
 			SDL_FillRect(graphics.screen, NULL, colors.black);
-			drawTopScores(graphics, config, colors);
-			renderScren(graphics);
-			handleScoreboardInput(graphics, quit, gameState, snake, timeVars, blueDotPos, redDot, config);
-		}
-        else if (gameState == WELCOME_SCREEN) {
-			SDL_FillRect(graphics.screen, NULL, colors.black);
-            drawWelcome(graphics, config, colors, buffer);
-            handleWelcomeInput(graphics, quit, gameState, snake,timeVars, blueDotPos, redDot, config, buffer);
+            drawAddScore(graphics, config, colors, buffer, snake);
+            handleAddScore(graphics, quit, gameState, snake,timeVars, blueDotPos, redDot, config, buffer);
             renderScren(graphics);
 		}
         timeVars.frames++;
