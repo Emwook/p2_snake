@@ -126,17 +126,25 @@ typedef struct {
     int grey;
 } colors_t;
 
-typedef struct{
+typedef struct {
     SDL_Event event;
-    SDL_Surface *screen;
-    SDL_Texture *charset;
+    SDL_Surface* screen;
+    SDL_Texture* charset;
     SDL_Rect srcRect;
-    SDL_Texture *scrtex;
-    SDL_Window  *window;
-    SDL_Renderer *renderer;
-    SDL_Surface *cr;
+    SDL_Texture* scrtex;
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    SDL_Surface* cr;
 } graphics_t;
 
+void DrawSurface(SDL_Surface* screen, SDL_Surface* sprite, int x, int y) {
+    SDL_Rect dest;
+    dest.x = x - sprite->w / 2;
+    dest.y = y - sprite->h / 2;
+    dest.w = sprite->w;
+    dest.h = sprite->h;
+    SDL_BlitSurface(sprite, NULL, screen, &dest);
+};
 
 void randomizePosition(game_elements_t& gameElems);
 void spawnRedDot(time_variables_t timeVars, game_elements_t& gameElems);
@@ -144,7 +152,7 @@ void updateScore(int& score, char a);
 void saveGameState(time_variables_t timeVars, game_elements_t gameElems);
 void loadGameState(time_variables_t& timeVars, game_elements_t& gameElems);
 void updateScoreboard(snake_t snake);
-void drawTopStats(colors_t colors, graphics_t graphics,time_variables_t timeVars, char* text, snake_t snake);
+void drawTopStats(colors_t colors, graphics_t graphics, time_variables_t timeVars, char* text, snake_t snake);
 
 void DrawSpriteScaled(graphics_t graphics, position_t dest, position_t sprite, int scale, int color) {
     SDL_Rect srcRect;
@@ -199,8 +207,8 @@ void updateScoreboard(snake_t snake) {
     int count = readScoreboard(entries);
     int found = 0;
     for (int i = 0; i < count; i++) {
-        if (strcmp(entries[i].name, snake.playerName) == 0 ) {
-            if(snake.score > entries[i].score){
+        if (strcmp(entries[i].name, snake.playerName) == 0) {
+            if (snake.score > entries[i].score) {
                 entries[i].score = snake.score;
             }
             found = 1;
@@ -213,7 +221,8 @@ void updateScoreboard(snake_t snake) {
             entries[count].name[BUFFER_SIZE - 1] = '\0';
             entries[count].score = snake.score;
             count++;
-        } else {
+        }
+        else {
             int lowestIndex = 0;
             for (int i = 1; i < count; i++) {
                 if (entries[i].score < entries[lowestIndex].score) {
@@ -230,7 +239,7 @@ void updateScoreboard(snake_t snake) {
 
 
 
-     FILE* file = fopen(SCORE_FILENAME, "w");
+    FILE* file = fopen(SCORE_FILENAME, "w");
     if (!file) {
         perror("Failed to open file");
         return;
@@ -245,30 +254,29 @@ void updateScoreboard(snake_t snake) {
 
 void DrawSnakePart(graphics_t graphics, position_t pos, snake_part_t type, directions_t direction, colors_t colors) {
     int spriteY = 9;
-    
+
     switch (direction) {
-        case UP:
-            spriteY = 8;
-            break;
-        case RIGHT:
-            spriteY = 9;
-            break;
-        case DOWN:
-            spriteY = 10;
-            break;
-        case LEFT:
-            spriteY = 11;
-            break;
+    case UP:
+        spriteY = 8;
+        break;
+    case RIGHT:
+        spriteY = 9;
+        break;
+    case DOWN:
+        spriteY = 10;
+        break;
+    case LEFT:
+        spriteY = 11;
+        break;
     }
     position_t sprite;
     sprite.y = spriteY;
     sprite.x = type;
 
-
-    DrawSpriteScaled(graphics,pos, sprite, 4, colors.green);
+    DrawSpriteScaled(graphics, pos, sprite, 4, colors.green);
 }
 
-void DrawString(graphics_t graphics, int x, int y, const char *text, int maxWidth, justify_t justify) {
+void DrawString(graphics_t graphics, int x, int y, const char* text, int maxWidth, justify_t justify) {
     int px, py, c;
     SDL_Rect s, d;
     s.w = 8;
@@ -280,7 +288,8 @@ void DrawString(graphics_t graphics, int x, int y, const char *text, int maxWidt
 
     if (justify == JUSTIFY_RIGHT) {
         x = x + maxWidth - textWidth;
-    } else if (justify == JUSTIFY_CENTER) {
+    }
+    else if (justify == JUSTIFY_CENTER) {
         x = x + (maxWidth - textWidth) / 2;
     }
 
@@ -297,46 +306,45 @@ void DrawString(graphics_t graphics, int x, int y, const char *text, int maxWidt
         text++;
     }
 }
-
-void DrawPixel(SDL_Surface *surface, int x, int y, Uint32 color) {
-	int bpp = surface->format->BytesPerPixel;
-	Uint8 *p = (Uint8 *)surface->pixels + y * surface->pitch + x * bpp;
-	*(Uint32 *)p = color;
-	};
+void DrawPixel(SDL_Surface* surface, int x, int y, Uint32 color) {
+    int bpp = surface->format->BytesPerPixel;
+    Uint8* p = (Uint8*)surface->pixels + y * surface->pitch + x * bpp;
+    *(Uint32*)p = color;
+};
 
 void DrawLine(graphics_t graphics, int x, int y, int l, int dx, int dy, Uint32 color) {
-	for(int i = 0; i < l; i++) {
-		DrawPixel(graphics.screen, x, y, color);
-		x += dx;
-		y += dy;
-		};
-	};
+    for (int i = 0; i < l; i++) {
+        DrawPixel(graphics.screen, x, y, color);
+        x += dx;
+        y += dy;
+    };
+};
 
 void DrawRectangle(graphics_t& graphics, int x, int y, int l, int k, Uint32 outlineColor, Uint32 fillColor) {
-	int i;
-	DrawLine(graphics, x, y, k, 0, 1, outlineColor);
-	DrawLine(graphics, x + l - 1, y, k, 0, 1, outlineColor);
-	DrawLine(graphics, x, y, l, 1, 0, outlineColor);
-	DrawLine(graphics, x, y + k - 1, l, 1, 0, outlineColor);
-	for(i = y + 1; i < y + k - 1; i++)
-		DrawLine(graphics, x + 1, i, l - 2, 1, 0, fillColor);
-	};
+    int i;
+    DrawLine(graphics, x, y, k, 0, 1, outlineColor);
+    DrawLine(graphics, x + l - 1, y, k, 0, 1, outlineColor);
+    DrawLine(graphics, x, y, l, 1, 0, outlineColor);
+    DrawLine(graphics, x, y + k - 1, l, 1, 0, outlineColor);
+    for (i = y + 1; i < y + k - 1; i++)
+        DrawLine(graphics, x + 1, i, l - 2, 1, 0, fillColor);
+};
 
 void ResetGame(time_variables_t& timeVars, game_elements_t& gameElems) {
     gameElems.snake.length = MIN_SNAKE_LENGTH;
-	for(int i = 0; i<gameElems.snake.length; i++){
-		gameElems.snake.body[i].x = SCREEN_WIDTH / 2 - (i *SQUARE_SIZE);
-    	gameElems.snake.body[i].y  = SCREEN_HEIGHT / 2;
+    for (int i = 0; i < gameElems.snake.length; i++) {
+        gameElems.snake.body[i].x = SCREEN_WIDTH / 2 - (i * SQUARE_SIZE);
+        gameElems.snake.body[i].y = SCREEN_HEIGHT / 2;
         gameElems.snake.direction[i] = DEFAULT_DIRECTION;
-	}
-	gameElems.snake.speed = 1;
-	gameElems.snake.direction[0] = RIGHT;
+    }
+    gameElems.snake.speed = 1;
+    gameElems.snake.direction[0] = RIGHT;
     timeVars.worldTime = 0;
     timeVars.timeAccumulator = 0;
 
     randomizePosition(gameElems);
     gameElems.redDot.isActive = 0;
-    spawnRedDot(timeVars, gameElems); 
+    spawnRedDot(timeVars, gameElems);
     gameElems.snake.score = 0;
 }
 int isValidMove(position_t nextPos) {
@@ -344,61 +352,61 @@ int isValidMove(position_t nextPos) {
     int nextX = nextPos.x;
     int nextY = nextPos.y;
     return (nextX - halfSquare >= MARGIN &&
-            nextX + halfSquare <= MARGIN + WIDTH &&
-            nextY - halfSquare >= MARGIN &&
-            nextY + halfSquare <= MARGIN + HEIGHT);
+        nextX + halfSquare <= MARGIN + WIDTH &&
+        nextY - halfSquare >= MARGIN &&
+        nextY + halfSquare <= MARGIN + HEIGHT);
 }
 
-void autoTurn(snake_t &snake) {
+void autoTurn(snake_t& snake) {
     int step = SQUARE_SIZE;
-	int rightTurn = (snake.direction[0] + 1) % 4;
+    int rightTurn = (snake.direction[0] + 1) % 4;
     int leftTurn = (snake.direction[0] + 3) % 4;
-    
+
     position_t rightPos;
     rightPos.x = snake.body[0].x;
     rightPos.y = snake.body[0].y;
 
-    switch(rightTurn) {
-        case 0:
-            rightPos.y -= step;
-            break;
-        case 1:
-            rightPos.x += step;
-            break;
-        case 2:
-            rightPos.y += step;
-            break;
-        case 3:
-            rightPos.x -= step;
-            break;
+    switch (rightTurn) {
+    case 0:
+        rightPos.y -= step;
+        break;
+    case 1:
+        rightPos.x += step;
+        break;
+    case 2:
+        rightPos.y += step;
+        break;
+    case 3:
+        rightPos.x -= step;
+        break;
     }
-    
-   position_t leftPos;
+
+    position_t leftPos;
     leftPos.x = snake.body[0].x;
     leftPos.y = snake.body[0].y;
 
-    switch(leftTurn) {
-        case 0:
-            leftPos.y -= step;
-            break;
-        case 1:
-            leftPos.x += step;
-            break;
-        case 2:
-            leftPos.y += step;
-            break;
-        case 3:
-            leftPos.x -= step;
-            break;
+    switch (leftTurn) {
+    case 0:
+        leftPos.y -= step;
+        break;
+    case 1:
+        leftPos.x += step;
+        break;
+    case 2:
+        leftPos.y += step;
+        break;
+    case 3:
+        leftPos.x -= step;
+        break;
     }
-    
+
     if (isValidMove(rightPos)) {
-        snake.direction[0] = (directions_t) rightTurn;
+        snake.direction[0] = (directions_t)rightTurn;
         return;
     }
-    
+
     if (isValidMove(leftPos)) {
-        snake.direction[0] = (directions_t) leftTurn;
+        snake.direction[0] = (directions_t)leftTurn;
         return;
     }
 }
@@ -407,7 +415,7 @@ void drawGrid(graphics_t graphics, Uint32 color) {
     for (int x = MARGIN; x < MARGIN + WIDTH; x += SQUARE_SIZE) {
         DrawLine(graphics, x, MARGIN, HEIGHT, 0, 1, color);
     }
-    
+
     for (int y = MARGIN; y < MARGIN + HEIGHT; y += SQUARE_SIZE) {
         DrawLine(graphics, MARGIN, y, WIDTH, 1, 0, color);
     }
@@ -416,22 +424,22 @@ void drawGrid(graphics_t graphics, Uint32 color) {
 void UpdateSnake(game_elements_t& gameElems) {
     for (int i = gameElems.snake.length - 1; i > 0; --i) {
         gameElems.snake.body[i] = gameElems.snake.body[i - 1];
-        gameElems.snake.direction[i] = gameElems.snake.direction[i-1];
+        gameElems.snake.direction[i] = gameElems.snake.direction[i - 1];
     }
 
     if (gameElems.snake.direction[0] == UP) {
         gameElems.snake.body[0].y -= SQUARE_SIZE;
-    } 
+    }
     else if (gameElems.snake.direction[0] == RIGHT) {
         gameElems.snake.body[0].x += SQUARE_SIZE;
-    } 
+    }
     else if (gameElems.snake.direction[0] == DOWN) {
         gameElems.snake.body[0].y += SQUARE_SIZE;
-    } 
+    }
     else if (gameElems.snake.direction[0] == LEFT) {
         gameElems.snake.body[0].x -= SQUARE_SIZE;
     }
-    gameElems.redDot.displayMode = (gameElems.redDot.displayMode + 1)%4;
+    gameElems.redDot.displayMode = (gameElems.redDot.displayMode + 1) % 4;
 }
 
 int checkSnakeCollision(snake_t* snake, int nextX, int nextY) {
@@ -440,7 +448,7 @@ int checkSnakeCollision(snake_t* snake, int nextX, int nextY) {
             return 1;
         }
     }
-	return 0;
+    return 0;
 }
 
 void randomizePosition(game_elements_t& gameElems) {
@@ -452,7 +460,7 @@ void randomizePosition(game_elements_t& gameElems) {
         gameElems.blueDotPos.y = MARGIN + (rand() % (HEIGHT / SQUARE_SIZE)) * SQUARE_SIZE + SQUARE_SIZE / 2;
 
         validPosition = 1;
-        if(gameElems.blueDotPos.x != gameElems.redDot.position.x && gameElems.blueDotPos.y != gameElems.redDot.position.y) {
+        if (gameElems.blueDotPos.x != gameElems.redDot.position.x && gameElems.blueDotPos.y != gameElems.redDot.position.y) {
             for (i = 0; i < gameElems.snake.length; i++) {
                 if (gameElems.blueDotPos.x == gameElems.snake.body[i].x && gameElems.blueDotPos.y == gameElems.snake.body[i].y) {
                     validPosition = 0;
@@ -464,13 +472,13 @@ void randomizePosition(game_elements_t& gameElems) {
 }
 
 void checkBlueDot(position_t next, game_elements_t& gameElems) {
-	if (next.x == gameElems.blueDotPos.x && next.y == gameElems.blueDotPos.y) {
-        if( gameElems.snake.length < MAX_SNAKE_LENGTH){
-		    gameElems.snake.length++;
+    if (next.x == gameElems.blueDotPos.x && next.y == gameElems.blueDotPos.y) {
+        if (gameElems.snake.length < MAX_SNAKE_LENGTH) {
+            gameElems.snake.length++;
         }
         updateScore(gameElems.snake.score, 'b');
-		randomizePosition(gameElems);
-	}
+        randomizePosition(gameElems);
+    }
 }
 
 int isScoreGoodEnough(int score) {
@@ -498,11 +506,10 @@ int isScoreGoodEnough(int score) {
     return 0;
 }
 
-void drawScoreboard (graphics_t graphics,int windowWidth, int windowX, int windowY) {
+void drawScoreboard(graphics_t graphics, int windowWidth, int windowX, int windowY) {
     char text[BUFFER_SIZE];
     snprintf(text, sizeof(text), "SCOREBOARD");
-    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, windowY + 6*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_LEFT);
-
+    DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, windowY + 6 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_LEFT);
     score_entry_t entries[SCOREBOARD_AMOUNT];
     int count = readScoreboard(entries);
 
@@ -518,58 +525,57 @@ void drawScoreboard (graphics_t graphics,int windowWidth, int windowX, int windo
 
     for (int i = 0; i < count && i < SCOREBOARD_AMOUNT; i++) {
         snprintf(text, sizeof(text), "%d. %s - %d", i + 1, entries[i].name, entries[i].score);
-        DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, 
-                   windowY + LINE_HEIGHT * (i + 7), text, SCREEN_WIDTH/2, JUSTIFY_LEFT);
+        DrawString(graphics, windowX + (windowWidth - strlen(text) * 8) / 2, windowY + LINE_HEIGHT * (i + 7), text, SCREEN_WIDTH / 2, JUSTIFY_LEFT);
     }
 }
 
 void drawGameOver(graphics_t graphics, colors_t colors, snake_t snake) {
     int windowWidth = SCREEN_WIDTH / 2;
-    int windowHeight = SCREEN_HEIGHT/ 2;
+    int windowHeight = SCREEN_HEIGHT / 2;
     int windowX = (SCREEN_WIDTH - windowWidth) / 2;
-    int windowY = (SCREEN_HEIGHT - windowHeight)/ 2;
-    
+    int windowY = (SCREEN_HEIGHT - windowHeight) / 2;
+
     DrawRectangle(graphics, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, colors.black, colors.black);
     DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight, colors.red, colors.black);
-    
+
     char text[BUFFER_SIZE];
     snprintf(text, sizeof(text), "GAME OVER!");
-    DrawString(graphics, windowX, windowY + LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX, windowY + LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "Final Score: %d", snake.score);
-    DrawString(graphics, windowX, windowY + 2*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX, windowY + 2 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     drawScoreboard(graphics, windowWidth, windowX, windowY);
- 
+
     snprintf(text, sizeof(text), "Press N for New Game");
-    DrawString(graphics, windowX, windowY + 12*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX, windowY + 12 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "Press I to load the last save");
-    DrawString(graphics, windowX, windowY + 13*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX, windowY + 13 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "Press ESC to Quit");
-    DrawString(graphics, windowX, windowY + 15*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX, windowY + 15 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 }
 
-void handleGameOverInput(graphics_t graphics, game_state_t& gameState,  time_variables_t& timeVars, game_elements_t& gameElems ) {
-    while(SDL_PollEvent(&graphics.event)) {
-        switch(graphics.event.type) {
-            case SDL_KEYDOWN:
-                if(graphics.event.key.keysym.sym == SDLK_ESCAPE) {
-                    gameElems.snake.quit = 1;
-                }
-                else if(graphics.event.key.keysym.sym == SDLK_n) {
-                    ResetGame(timeVars, gameElems);
-                    gameState = GAME_RUNNING;
-                }
-                else if(graphics.event.key.keysym.sym == SDLK_i) {
-                    loadGameState(timeVars, gameElems);
-                    gameState = GAME_RUNNING;
-                }
-                break;
-            case SDL_QUIT:
+void handleGameOverInput(graphics_t graphics, game_state_t& gameState, time_variables_t& timeVars, game_elements_t& gameElems) {
+    while (SDL_PollEvent(&graphics.event)) {
+        switch (graphics.event.type) {
+        case SDL_KEYDOWN:
+            if (graphics.event.key.keysym.sym == SDLK_ESCAPE) {
                 gameElems.snake.quit = 1;
-                break;
+            }
+            else if (graphics.event.key.keysym.sym == SDLK_n) {
+                ResetGame(timeVars, gameElems);
+                gameState = GAME_RUNNING;
+            }
+            else if (graphics.event.key.keysym.sym == SDLK_i) {
+                loadGameState(timeVars, gameElems);
+                gameState = GAME_RUNNING;
+            }
+            break;
+        case SDL_QUIT:
+            gameElems.snake.quit = 1;
+            break;
         }
     }
 }
@@ -601,17 +607,17 @@ void spawnRedDot(time_variables_t timeVars, game_elements_t& gameElems) {
 void checkRedDot(game_elements_t& gameElems) {
     if (!gameElems.redDot.isActive) return;
 
-    if (gameElems.redDot.position.x == gameElems.snake.body[0].x && 
+    if (gameElems.redDot.position.x == gameElems.snake.body[0].x &&
         gameElems.snake.body[0].y == gameElems.redDot.position.y) {
         if (rand() % 2 == 0) {
             int newLength = gameElems.snake.length - SHORTEN_LENGTH;
-            if (newLength < MIN_SNAKE_LENGTH){
+            if (newLength < MIN_SNAKE_LENGTH) {
                 newLength = MIN_SNAKE_LENGTH;
-            } 
+            }
             gameElems.snake.length = newLength;
-        } 
+        }
         else {
-            if(gameElems.snake.speed - SLOWDOWN_FACTOR>1){
+            if (gameElems.snake.speed - SLOWDOWN_FACTOR > 1) {
                 gameElems.snake.speed -= SLOWDOWN_FACTOR;
             }
             else {
@@ -635,15 +641,14 @@ void drawProgressBar(graphics_t graphics, red_dot_t& redDot, time_variables_t ti
     }
 
     SDL_Rect borderRect = {
-        PROGRESS_BAR_WIDTH *2,
-        PROGRESS_BAR_HEIGHT *2,
+        PROGRESS_BAR_WIDTH * 2,
+        PROGRESS_BAR_HEIGHT * 2,
         PROGRESS_BAR_WIDTH,
         PROGRESS_BAR_HEIGHT
     };
-    DrawRectangle(graphics, borderRect.x, borderRect.y, 
-                  borderRect.w, borderRect.h, colors.green, colors.black);
+    DrawRectangle(graphics, borderRect.x, borderRect.y, borderRect.w, borderRect.h, colors.green, colors.black);
 
-    float fillHeight = (remainingTime / redDot.displayDuration) * (PROGRESS_BAR_HEIGHT/3);
+    float fillHeight = (remainingTime / redDot.displayDuration) * (PROGRESS_BAR_HEIGHT / 3);
     SDL_Rect fillRect = {
         borderRect.x + 2,
         borderRect.y + 2 + (int)((PROGRESS_BAR_HEIGHT - 4) - fillHeight),
@@ -661,7 +666,7 @@ void drawProgressBar(graphics_t graphics, red_dot_t& redDot, time_variables_t ti
 void updateBonusSystem(time_variables_t timeVars, game_elements_t& gameElems) {
     if (!gameElems.redDot.isActive && timeVars.worldTime >= gameElems.redDot.spawnTime) {
         spawnRedDot(timeVars, gameElems);
-        float spawnInterval = MIN_SPAWN_INTERVAL + (rand()%2) * (MAX_SPAWN_INTERVAL- MIN_SPAWN_INTERVAL);
+        float spawnInterval = MIN_SPAWN_INTERVAL + (rand() % 2) * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
         gameElems.redDot.spawnTime = timeVars.worldTime + spawnInterval;
     }
 
@@ -672,16 +677,16 @@ void updateBonusSystem(time_variables_t timeVars, game_elements_t& gameElems) {
     }
 }
 
-void updateScore(int& score, char a ){
-    switch(a) {
-        case 'r':
-            score +=  RED_DOT_BONUS;
-            break;
-        case 'b':
-            score +=  BLUE_DOT_BONUS;
-            break;
-        default:
-            break;
+void updateScore(int& score, char a) {
+    switch (a) {
+    case 'r':
+        score += RED_DOT_BONUS;
+        break;
+    case 'b':
+        score += BLUE_DOT_BONUS;
+        break;
+    default:
+        break;
     }
 }
 
@@ -699,11 +704,14 @@ void processSnakeMovement(time_variables_t& timeVars, game_state_t& gameState, g
 
         if (gameElems.snake.direction[0] == UP) {
             stepY -= SQUARE_SIZE;
-        } else if (gameElems.snake.direction[0] == RIGHT) {
+        }
+        else if (gameElems.snake.direction[0] == RIGHT) {
             stepX += SQUARE_SIZE;
-        } else if (gameElems.snake.direction[0] == DOWN) {
+        }
+        else if (gameElems.snake.direction[0] == DOWN) {
             stepY += SQUARE_SIZE;
-        } else if (gameElems.snake.direction[0] == LEFT) {
+        }
+        else if (gameElems.snake.direction[0] == LEFT) {
             stepX -= SQUARE_SIZE;
         }
 
@@ -721,13 +729,14 @@ void processSnakeMovement(time_variables_t& timeVars, game_state_t& gameState, g
             buffer[0] = '\0';
             if (isScoreGoodEnough(gameElems.snake.score)) {
                 gameState = ADD_SCORE;
-            } else {
+            }
+            else {
                 gameState = GAME_OVER;
             }
             return;
         }
 
-        checkBlueDot(nextPos,gameElems);
+        checkBlueDot(nextPos, gameElems);
         updateBonusSystem(timeVars, gameElems);
         UpdateSnake(gameElems);
 
@@ -736,88 +745,91 @@ void processSnakeMovement(time_variables_t& timeVars, game_state_t& gameState, g
 }
 
 void handleGameRunningInput(graphics_t graphics, time_variables_t& timeVars, game_elements_t& gameElems) {
-    while(SDL_PollEvent(&graphics.event)) {
-            switch(graphics.event.type) {
-                case SDL_KEYDOWN:
-                    if(graphics.event.key.keysym.sym == SDLK_ESCAPE) gameElems.snake.quit = 1;
-                    else if(graphics.event.key.keysym.sym == SDLK_n) ResetGame(timeVars, gameElems);
-                    else if(graphics.event.key.keysym.sym == SDLK_s) saveGameState(timeVars,gameElems);
-                    else if(graphics.event.key.keysym.sym == SDLK_i) loadGameState(timeVars,gameElems);
-                    else if(graphics.event.key.keysym.sym == SDLK_UP){
-						gameElems.snake.direction[0] = UP;
-					} 
-                    else if(graphics.event.key.keysym.sym == SDLK_RIGHT){
-						gameElems.snake.direction[0] = RIGHT;
-					} 
-                    else if(graphics.event.key.keysym.sym == SDLK_DOWN){
-						gameElems.snake.direction[0] = DOWN;
-					} 
-                    else if(graphics.event.key.keysym.sym == SDLK_LEFT){
-						gameElems.snake.direction[0] = LEFT;
-					}
-                    break;
-                case SDL_QUIT:
-                    gameElems.snake.quit = 1;
-                    break;
-            };
-        }
+    while (SDL_PollEvent(&graphics.event)) {
+        switch (graphics.event.type) {
+        case SDL_KEYDOWN:
+            if (graphics.event.key.keysym.sym == SDLK_ESCAPE) gameElems.snake.quit = 1;
+            else if (graphics.event.key.keysym.sym == SDLK_n) ResetGame(timeVars, gameElems);
+            else if (graphics.event.key.keysym.sym == SDLK_s) saveGameState(timeVars, gameElems);
+            else if (graphics.event.key.keysym.sym == SDLK_i) loadGameState(timeVars, gameElems);
+            else if (graphics.event.key.keysym.sym == SDLK_UP) {
+                gameElems.snake.direction[0] = UP;
+            }
+            else if (graphics.event.key.keysym.sym == SDLK_RIGHT) {
+                gameElems.snake.direction[0] = RIGHT;
+            }
+            else if (graphics.event.key.keysym.sym == SDLK_DOWN) {
+                gameElems.snake.direction[0] = DOWN;
+            }
+            else if (graphics.event.key.keysym.sym == SDLK_LEFT) {
+                gameElems.snake.direction[0] = LEFT;
+            }
+            break;
+        case SDL_QUIT:
+            gameElems.snake.quit = 1;
+            break;
+        };
+    }
 }
 
-void renderScren (graphics_t graphics){
+void renderScren(graphics_t graphics) {
     SDL_UpdateTexture(graphics.scrtex, NULL, graphics.screen->pixels, graphics.screen->pitch);
     SDL_RenderCopy(graphics.renderer, graphics.scrtex, NULL, NULL);
     SDL_RenderPresent(graphics.renderer);
 }
 
-void drawBottomStats (colors_t colors, graphics_t graphics,char* text) {
-    DrawRectangle(graphics, TEXT_MARGIN, STATS_BOTTOM_Y,STATS_BOTTOM_X, STATS_HEIGHT, colors.green, colors.black);
-    snprintf(text,SCREEN_WIDTH, "requirments:");
-    DrawString(graphics, 2*TEXT_MARGIN, STATS_BOTTOM_Y + LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_LEFT);
-    snprintf(text,SCREEN_WIDTH, "1, 2, 3, 4, A, B, C, D, E, F, G");
-    DrawString(graphics, 2*TEXT_MARGIN,STATS_BOTTOM_Y+2*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_LEFT);
+void drawBottomStats(colors_t colors, graphics_t graphics, char* text) {
+    DrawRectangle(graphics, TEXT_MARGIN, STATS_BOTTOM_Y, STATS_BOTTOM_X, STATS_HEIGHT, colors.green, colors.black);
+    snprintf(text, SCREEN_WIDTH, "requirments:");
+    DrawString(graphics, 2 * TEXT_MARGIN, STATS_BOTTOM_Y + LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_LEFT);
+    snprintf(text, SCREEN_WIDTH, "1, 2, 3, 4, A, B, C, D, E, F, G");
+    DrawString(graphics, 2 * TEXT_MARGIN, STATS_BOTTOM_Y + 2 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_LEFT);
     snprintf(text, SCREEN_WIDTH, "ESC - quit, N - new game");
-    DrawString(graphics, SCREEN_WIDTH/2 - 2*TEXT_MARGIN, STATS_BOTTOM_Y + LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_RIGHT);
+    DrawString(graphics, SCREEN_WIDTH / 2 - 2 * TEXT_MARGIN, STATS_BOTTOM_Y + LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_RIGHT);
     snprintf(text, SCREEN_WIDTH, "S - save, I - load last save");
-    DrawString(graphics, SCREEN_WIDTH/2 - 2*TEXT_MARGIN,STATS_BOTTOM_Y+2*LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_RIGHT);
+    DrawString(graphics, SCREEN_WIDTH / 2 - 2 * TEXT_MARGIN, STATS_BOTTOM_Y + 2 * LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_RIGHT);
 }
 
-void drawGameElements (colors_t colors, graphics_t graphics, time_variables_t timeVars, game_elements_t& gameElems) {
+
+void drawGameElements(colors_t colors, graphics_t graphics, time_variables_t timeVars, game_elements_t& gameElems) {
     DrawSnakePart(graphics, gameElems.snake.body[0], SNAKE_HEAD, gameElems.snake.direction[0], colors);
     for (int i = 1; i < gameElems.snake.length - 1; i++) {
-        snake_part_t partType = (i % 2 == (gameElems.redDot.displayMode%2)) ? SNAKE_BODY_SMALL : SNAKE_BODY_BIG;
+        snake_part_t partType = (i % 2 == (gameElems.redDot.displayMode % 2)) ? SNAKE_BODY_SMALL : SNAKE_BODY_BIG;
         DrawSnakePart(graphics, gameElems.snake.body[i], partType, gameElems.snake.direction[i], colors);
     }
 
-    DrawSnakePart(graphics, gameElems.snake.body[gameElems.snake.length-1], SNAKE_TAIL, gameElems.snake.direction[gameElems.snake.length-1], colors);
+    DrawSnakePart(graphics, gameElems.snake.body[gameElems.snake.length - 1], SNAKE_TAIL, gameElems.snake.direction[gameElems.snake.length - 1], colors);
 
     position_t dotSprite;
     dotSprite.x = 5;
     dotSprite.y = 8 + gameElems.redDot.displayMode % 4;
-    DrawSpriteScaled(graphics, gameElems.blueDotPos,  dotSprite, 4, colors.blue);
+    DrawSpriteScaled(graphics, gameElems.blueDotPos, dotSprite, 4, colors.blue);
 
-    if(gameElems.redDot.isActive == 1){
+    if (gameElems.redDot.isActive == 1) {
         SDL_SetSurfaceColorMod(graphics.cr, 255, 0, 0);
-        DrawSpriteScaled(graphics, gameElems.redDot.position, dotSprite,4, colors.red);
+        DrawSpriteScaled(graphics, gameElems.redDot.position, dotSprite, 4, colors.red);
         SDL_SetSurfaceColorMod(graphics.cr, 255, 255, 255);
-        drawProgressBar(graphics,gameElems.redDot,timeVars,colors);
+        drawProgressBar(graphics, gameElems.redDot, timeVars, colors);
     }
 }
 
 void drawTopStats(colors_t colors, graphics_t graphics, time_variables_t timeVars, char* text, snake_t snake) {
-    DrawRectangle(graphics, TEXT_MARGIN,TEXT_MARGIN, STATS_BOTTOM_X, STATS_HEIGHT, colors.green, colors.black);
-    snprintf(text, SCREEN_WIDTH/3, "time = %.1lf s ", timeVars.worldTime);
-    DrawString(graphics,2*TEXT_MARGIN, LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_LEFT);
-    snprintf(text, SCREEN_WIDTH/3, "score: %d", snake.score);
-    DrawString(graphics, 2*TEXT_MARGIN, LINE_HEIGHT*2, text, SCREEN_WIDTH/2, JUSTIFY_LEFT);
-    snprintf(text, SCREEN_WIDTH/3, "length: %d", snake.length);
-    DrawString(graphics,SCREEN_WIDTH/2 - 2*TEXT_MARGIN, LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_RIGHT);
-    snprintf(text, SCREEN_WIDTH/3, "speed: %.1f", snake.speed);
-    DrawString(graphics,SCREEN_WIDTH/2 - 2*TEXT_MARGIN, LINE_HEIGHT*2, text, SCREEN_WIDTH/2, JUSTIFY_RIGHT);
+    DrawRectangle(graphics, TEXT_MARGIN, TEXT_MARGIN, STATS_BOTTOM_X, STATS_HEIGHT, colors.green, colors.black);
+    snprintf(text, SCREEN_WIDTH / 3, "time = %.1lf s ", timeVars.worldTime);
+    DrawString(graphics, 2 * TEXT_MARGIN, LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_LEFT);
+    snprintf(text, SCREEN_WIDTH / 3, "score: %d", snake.score);
+    DrawString(graphics, 2 * TEXT_MARGIN, LINE_HEIGHT * 2, text, SCREEN_WIDTH / 2, JUSTIFY_LEFT);
+    snprintf(text, SCREEN_WIDTH / 3, "length: %d", snake.length);
+    DrawString(graphics, SCREEN_WIDTH / 2 - 2 * TEXT_MARGIN, LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_RIGHT);
+    snprintf(text, SCREEN_WIDTH / 3, "speed: %.1f", snake.speed);
+    DrawString(graphics, SCREEN_WIDTH / 2 - 2 * TEXT_MARGIN, LINE_HEIGHT * 2, text, SCREEN_WIDTH / 2, JUSTIFY_RIGHT);
+    snprintf(text, SCREEN_WIDTH / 3, "Emilia Lukasiuk");
+    DrawString(graphics, SCREEN_WIDTH / 3, LINE_HEIGHT * 2, text, SCREEN_WIDTH / 3, JUSTIFY_CENTER);
 }
 
 void handleTimeIncrease(time_variables_t& timeVars, snake_t& snake) {
     timeVars.timeAccumulator += timeVars.delta;
-    if(timeVars.worldTime > timeVars.nextIncrease){
+    if (timeVars.worldTime > timeVars.nextIncrease) {
         snake.speed += SPEED_UP_AMOUNT;
         timeVars.nextIncrease += SPEED_UP_TIME;
     }
@@ -830,7 +842,7 @@ void handleTimeUpdate(time_variables_t& timeVars) {
     timeVars.worldTime += timeVars.delta;
 }
 
-void saveGameState(time_variables_t timeVars,game_elements_t gameElems) {
+void saveGameState(time_variables_t timeVars, game_elements_t gameElems) {
     FILE* file = fopen(SAVE_FILENAME, "w");
     if (!file) {
         perror("Error opening file for saving");
@@ -866,7 +878,7 @@ int loadGameFromFile(time_variables_t& timeVars, game_elements_t& gameElems) {
     ResetGame(timeVars, gameElems);
     if (fscanf(file, "%d", &gameElems.snake.length) != 1) return 0;
     if (fscanf(file, "%d", &gameElems.snake.direction[0]) != 1) return 0;
-    if (fscanf(file, "%lf",&gameElems.snake.speed) != 1) return 0;
+    if (fscanf(file, "%lf", &gameElems.snake.speed) != 1) return 0;
     if (fscanf(file, "%d", &gameElems.snake.score) != 1) return 0;
     for (int i = 0; i < gameElems.snake.length; i++) {
         if (fscanf(file, "%d %d %d", &gameElems.snake.body[i].x, &gameElems.snake.body[i].y, &gameElems.snake.direction[i]) != 3) return 0;
@@ -897,103 +909,102 @@ int isFileNotEmpty(const char* saveFilename) {
     return fileSize > 0;
 }
 
-void loadGameState(time_variables_t& timeVars, game_elements_t& gameElems){
+void loadGameState(time_variables_t& timeVars, game_elements_t& gameElems) {
     if (isFileNotEmpty(SAVE_FILENAME)) {
         loadGameFromFile(timeVars, gameElems);
-    } else {
+    }
+    else {
         printf("No data available to load.\n");
     }
 }
 
-void drawAddScore(graphics_t graphics, colors_t colors,char* buffer, snake_t snake) {
+void drawAddScore(graphics_t graphics, colors_t colors, char* buffer, snake_t snake) {
     int windowWidth = SCREEN_WIDTH / 2;
     int windowHeight = SCREEN_HEIGHT / 3;
     int windowX = (SCREEN_WIDTH - windowWidth) / 2;
     int windowY = (SCREEN_HEIGHT - windowHeight) / 2;
 
-    DrawRectangle(graphics, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 
-                  SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00), 
-                  SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00));
+    DrawRectangle(graphics, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
+        SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00),
+        SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00));
 
-    DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight,colors.red, colors.black);
+    DrawRectangle(graphics, windowX, windowY, windowWidth, windowHeight, colors.red, colors.black);
 
     char text[BUFFER_SIZE];
     snprintf(text, sizeof(text), "WOW! THAT'S A GREAT SCORE %s!", snake.playerName);
-    DrawString(graphics, windowX , 
-               windowY + LINE_HEIGHT, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX,
+        windowY + LINE_HEIGHT, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "Enter your name to add it to scoreboard:");
-    DrawString(graphics, windowX , 
-               windowY + LINE_HEIGHT*2, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX,
+        windowY + LINE_HEIGHT * 2, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "%s", buffer);
-    DrawString(graphics, windowX , 
-               windowY + LINE_HEIGHT*4, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX,
+        windowY + LINE_HEIGHT * 4, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
-    DrawLine(graphics, windowWidth - windowWidth/4, windowY + LINE_HEIGHT*5, windowWidth/2, 1, 0, colors.blue);
-
-
+    DrawLine(graphics, windowWidth - windowWidth / 4, windowY + LINE_HEIGHT * 5, windowWidth / 2, 1, 0, colors.blue);
     snprintf(text, sizeof(text), "Press Enter to start typing");
-    DrawString(graphics, windowX , 
-               windowY + LINE_HEIGHT*8, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX,
+        windowY + LINE_HEIGHT * 8, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 
     snprintf(text, sizeof(text), "Press N to start a new game");
-    DrawString(graphics, windowX , 
-               windowY + LINE_HEIGHT*9, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX,
+        windowY + LINE_HEIGHT * 9, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
     snprintf(text, sizeof(text), "Press ESC to Quit");
-    DrawString(graphics, windowX , 
-               windowY + LINE_HEIGHT*10, text, SCREEN_WIDTH/2, JUSTIFY_CENTER);
+    DrawString(graphics, windowX,
+        windowY + LINE_HEIGHT * 10, text, SCREEN_WIDTH / 2, JUSTIFY_CENTER);
 }
 
 void handleAddScore(graphics_t graphics, game_state_t& gameState, time_variables_t& timeVars, game_elements_t& gameElems, char* buffer) {
     static int isTyping = 0;
     while (SDL_PollEvent(&graphics.event)) {
         switch (graphics.event.type) {
-            case SDL_QUIT:
+        case SDL_QUIT:
+            gameElems.snake.quit = 1;
+            break;
+        case SDL_KEYDOWN:
+            if (graphics.event.key.keysym.sym == SDLK_ESCAPE) {
                 gameElems.snake.quit = 1;
-                break;
-            case SDL_KEYDOWN:
-                if (graphics.event.key.keysym.sym == SDLK_ESCAPE) {
-                    gameElems.snake.quit = 1;
+            }
+            else if (graphics.event.key.keysym.sym == SDLK_RETURN) {
+                if (isTyping && buffer[0] != '\0') {
+                    strncpy(gameElems.snake.playerName, buffer, BUFFER_SIZE - 1);
+                    gameElems.snake.playerName[BUFFER_SIZE - 1] = '\0';
+                    isTyping = 0;
+                    updateScoreboard(gameElems.snake);
+                    buffer[0] = '\0';
+                    gameElems.snake.playerName[0] = '\0';
+                    gameState = GAME_OVER;
                 }
-                else if (graphics.event.key.keysym.sym == SDLK_RETURN) {
-                    if (isTyping && buffer[0] !='\0') {
-                        strncpy(gameElems.snake.playerName, buffer, BUFFER_SIZE - 1);
-                        gameElems.snake.playerName[BUFFER_SIZE - 1] = '\0';
-                        isTyping = 0;
-                        updateScoreboard(gameElems.snake);
-                        buffer[0] = '\0';
-                        gameElems.snake.playerName[0] = '\0';
-                        gameState = GAME_OVER;
-                    } else {
-                        isTyping = 1;
-                        buffer[0] = '\0';
-                    }
-                } 
-                else if (isTyping && graphics.event.key.keysym.sym == SDLK_BACKSPACE) {
-                    int nameLength = strlen(buffer);
-                    if (nameLength > 0) {
-                        buffer[nameLength - 1] = '\0';
-                    }
+                else {
+                    isTyping = 1;
+                    buffer[0] = '\0';
                 }
-                break;
-            case SDL_TEXTINPUT:
-                if (isTyping && strlen(buffer) < BUFFER_SIZE - 1) {
-                    strcat(buffer, graphics.event.text.text);
+            }
+            else if (isTyping && graphics.event.key.keysym.sym == SDLK_BACKSPACE) {
+                int nameLength = strlen(buffer);
+                if (nameLength > 0) {
+                    buffer[nameLength - 1] = '\0';
                 }
-                break;
-            default:
-                break;
+            }
+            break;
+        case SDL_TEXTINPUT:
+            if (isTyping && strlen(buffer) < BUFFER_SIZE - 1) {
+                strcat(buffer, graphics.event.text.text);
+            }
+            break;
+        default:
+            break;
         }
     }
 }
 
-void handleGraphicsSetup (graphics_t& graphics){
+void handleGraphicsSetup(graphics_t& graphics) {
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     SDL_RenderSetLogicalSize(graphics.renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
     SDL_SetRenderDrawColor(graphics.renderer, 0, 0, 0, 255);
 
-    SDL_SetWindowTitle(graphics.window, "snake - EL");
     graphics.screen = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     graphics.scrtex = SDL_CreateTexture(graphics.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -1012,102 +1023,139 @@ void handleGraphicsSetup (graphics_t& graphics){
 extern "C"
 #endif
 
-int main() {
-    srand(time(NULL));   
+int main(int argc, char** argv) {
+    srand(time(NULL));
 
-	game_state_t gameState = GAME_RUNNING;
+    game_state_t gameState = GAME_RUNNING;
     int rc;
-
     char buffer[BUFFER_SIZE];
-
     time_variables_t timeVars;
     timeVars.nextIncrease = SPEED_UP_AMOUNT;
     timeVars.worldTime = 0;
     timeVars.t1 = 0;
     timeVars.t2 = 0;
-
     snake_t snake;
     snake.direction[0] = RIGHT;
     snake.length = DEFAULT_SNAKE_LENGTH;
     snake.speed = DEFAULT_SNAKE_SPEED;
-
     red_dot_t redDot;
     redDot.isActive = 0;
     redDot.displayDuration = 5;
     redDot.displayMode = 1;
-
     position_t blueDotPos;
     graphics_t graphics;
-
     game_elements_t gameElems;
     gameElems.snake = snake;
     gameElems.redDot = redDot;
-    gameElems.blueDotPos = blueDotPos;
-
-
     ResetGame(timeVars, gameElems);
-
-    if(SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
         printf("SDL_Init error: %s\n", SDL_GetError());
         return 1;
     }
 
-    rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &graphics.window, &graphics.renderer);
 
-    if(rc != 0) {
+    timeVars.t1 = SDL_GetTicks();
+    timeVars.frames = 0;
+    gameElems.snake.quit = 0;
+    SDL_Event event;
+    SDL_Surface* screen;
+    SDL_Surface* cr;
+    SDL_Texture* charset;
+    SDL_Surface* props;
+    SDL_Texture* scrtex;
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+
+
+    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+        printf("SDL_Init error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    rc = SDL_CreateWindowAndRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, 0, &window, &renderer);
+    if (rc != 0) {
         SDL_Quit();
         printf("SDL_CreateWindowAndRenderer error: %s\n", SDL_GetError());
         return 1;
-    }
-    handleGraphicsSetup(graphics);
+    };
+
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+
+    SDL_SetWindowTitle(window, "Szablon do zdania drugiego 2017");
+
+
+    screen = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
+        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+
+    scrtex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+        SDL_TEXTUREACCESS_STREAMING,
+        SCREEN_WIDTH, SCREEN_HEIGHT);
+
+
+    SDL_ShowCursor(SDL_DISABLE);
+
+    cr = SDL_LoadBMP("./cs8x8c.bmp");
+    charset = SDL_CreateTextureFromSurface(renderer, cr);
+
+    SDL_SetColorKey(cr, true, 0x000000);
 
     colors_t colors;
-    colors.black = SDL_MapRGB(graphics.screen->format, 0x00, 0x00, 0x00);
-    colors.green = SDL_MapRGB(graphics.screen->format, 0x00, 0xFF, 0x00);
-    colors.red = SDL_MapRGB(graphics.screen->format, 0xFF, 0x00, 0x00);
-    colors.blue = SDL_MapRGB(graphics.screen->format, 0x11, 0x11, 0xCC);
-    colors.white = SDL_MapRGB(graphics.screen->format, 0xFF, 0xFF, 0xFF);
-    colors.grey = SDL_MapRGB(graphics.screen->format, 0x33, 0x33, 0x33);
+    colors.black = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
+    colors.green = SDL_MapRGB(screen->format, 0x00, 0xFF, 0x00);
+    colors.red = SDL_MapRGB(screen->format, 0xFF, 0x00, 0x00);
+    colors.blue = SDL_MapRGB(screen->format, 0x11, 0x11, 0xCC);
+    colors.white = SDL_MapRGB(screen->format, 0xFF, 0xFF, 0xFF);
+    colors.grey = SDL_MapRGB(screen->format, 0x33, 0x33, 0x33);
 
-    
+    graphics.screen = screen;
+    graphics.charset = charset;
+    graphics.cr = cr;
+    graphics.renderer = renderer;
+    graphics.window = window;
+    graphics.scrtex = scrtex;
+
+
+
     char text[BUFFER_SIZE];
     timeVars.t1 = SDL_GetTicks();
     timeVars.frames = 0;
     gameElems.snake.quit = 0;
-    while(!gameElems.snake.quit) {
+    while (!gameElems.snake.quit) {
         handleTimeUpdate(timeVars);
-		if (gameState == GAME_RUNNING) {
-            handleTimeIncrease(timeVars,gameElems.snake);
+        if (gameState == GAME_RUNNING) {
+            handleTimeIncrease(timeVars, gameElems.snake);
             processSnakeMovement(timeVars, gameState, gameElems, buffer);
             SDL_FillRect(graphics.screen, NULL, colors.black);
-            DrawRectangle(graphics, MARGIN, MARGIN, WIDTH, HEIGHT, colors.green, colors.black); 
+            DrawRectangle(graphics, MARGIN, MARGIN, WIDTH, HEIGHT, colors.green, colors.black);
             drawGrid(graphics, colors.grey);
-            drawGameElements(colors,graphics,timeVars, gameElems);
-            drawTopStats(colors,graphics,timeVars,buffer, gameElems.snake);
-            drawBottomStats(colors,graphics,buffer);
+            drawGameElements(colors, graphics, timeVars, gameElems);
+            drawTopStats(colors, graphics, timeVars, buffer, gameElems.snake);
+            drawBottomStats(colors, graphics, buffer);
             renderScren(graphics);
             handleGameRunningInput(graphics, timeVars, gameElems);
-		}
-		else if (gameState == GAME_OVER) {
-			SDL_FillRect(graphics.screen, NULL, colors.black);
-			drawGameOver(graphics, colors, gameElems.snake);
-			renderScren(graphics);
-			handleGameOverInput(graphics, gameState, timeVars, gameElems);
-		}
-        else if (gameState == ADD_SCORE) {
-			SDL_FillRect(graphics.screen, NULL, colors.black);
-            drawAddScore(graphics, colors, text, gameElems.snake);
-            handleAddScore(graphics, gameState,timeVars, gameElems, text);
+        }
+        else if (gameState == GAME_OVER) {
+            SDL_FillRect(screen, NULL, colors.black);
+            drawGameOver(graphics, colors, gameElems.snake);
             renderScren(graphics);
-		}
+            handleGameOverInput(graphics, gameState, timeVars, gameElems);
+        }
+        else if (gameState == ADD_SCORE) {
+            SDL_FillRect(screen, NULL, colors.black);
+            drawAddScore(graphics, colors, text, gameElems.snake);
+            handleAddScore(graphics, gameState, timeVars, gameElems, text);
+            renderScren(graphics);
+        }
         timeVars.frames++;
     }
 
-    SDL_FreeSurface(graphics.cr);
-    SDL_FreeSurface(graphics.screen);
-    SDL_DestroyTexture(graphics.scrtex);
-    SDL_DestroyRenderer(graphics.renderer);
-    SDL_DestroyWindow(graphics.window);
+    SDL_FreeSurface(cr);
+    SDL_FreeSurface(screen);
+    SDL_DestroyTexture(scrtex);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
 
     SDL_Quit();
     return 0;
